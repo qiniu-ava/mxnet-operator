@@ -4,23 +4,23 @@ metadata:
   name: "mxjob-example"
 spec:
   replicaSpecs:
-    - replicas: 1
-      mxReplicaType: SCHEDULER
+    scheduler:
+      replicas: 1
       psRootPort: 9091
       template:
         spec:
           containers:
             - image: base-mxnet-py27-cpu:latest
           restartPolicy: OnFailure
-    - replicas: 2 
-      mxReplicaType: SERVER
+    server:
+      replicas: 2 
       template:
         spec:
           containers:
             - image: base-mxnet-py27-cpu:latest
           restartPolicy: OnFailure
-    - replicas: 3
-      mxReplicaType: WORKER
+    worker:
+      replicas: 3
       template:
         spec:
           containers:

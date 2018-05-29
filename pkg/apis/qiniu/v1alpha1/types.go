@@ -23,19 +23,40 @@ type MXJob struct {
 }
 
 type MXJobSpec struct {
-	// ReplicaSpecs specifies the MX replicas to run.
-	ReplicaSpecs []*MXReplicaSpec `json:"replicaSpecs"`
+	// ReplicaSpecs specifies the MX scheduler replicas to run.
+	Scheduler *MXReplicaSpec `json:"scheduler,omitempty"`
+	// ReplicaSpecs specifies the MX server replicas to run.
+	Server *MXReplicaSpec `json:"server,omitempty"`
+	// ReplicaSpecs specifies the MX worker replicas to run.
+	Worker *MXReplicaSpec `json:"worker,omitempty"`
 }
+
 type MXJobStatus struct {
 	// Phase is the MXJob running phase
-	Phase  MXJobPhase `json:"phase"`
-	Reason string     `json:"reason"`
-
-	// State indicates the state of the job.
-	State State `json:"state"`
+	Phase MXJobPhase `json:"phase"`
 
 	// ReplicaStatuses specifies the status of each MX replica.
-	ReplicaStatuses []*MXReplicaStatus `json:"replicaStatuses"`
+	ReplicaStatuses *MXReplicaStatuses `json:"replicaStatuses"`
+
+	// Represents time when the MXJob was acknowledged by the MXJob controller.
+	// It is not guaranteed to be set in happens-before order across separate operations.
+	// It is represented in RFC3339 form and is in UTC.
+	StartTime *metav1.Time `json:"startTime,omitempty"`
+
+	// Represents time when the MXJob was completed. It is not guaranteed to
+	// be set in happens-before order across separate operations.
+	// It is represented in RFC3339 form and is in UTC.
+	CompletionTime *metav1.Time `json:"completionTime,omitempty"`
+
+	// Represents is an array of current observed MXJob conditions.
+	//Conditions []MXJobCondition `json:"conditions"`
+}
+
+// MXReplicaStatuses is the status collection of mxnet replica.
+type MXReplicaStatuses struct {
+	Scheduler *MXReplicaStatus `json:"scheduler,omitempty"`
+	Server    *MXReplicaStatus `json:"server,omitempty"`
+	Worker    *MXReplicaStatus `json:"worker,omitempty"`
 }
 
 type MXReplicaSpec struct {
@@ -48,29 +69,31 @@ type MXReplicaSpec struct {
 	Template *v1.PodTemplateSpec `json:"template,omitempty" protobuf:"bytes,3,opt,name=template"`
 
 	// PsRootPort is the port to use for scheduler.
-	PsRootPort    *int32 `json:"psRootPort,omitempty" protobuf:"varint,1,opt,name=psRootPort"`
-	MXReplicaType `json:"mxReplicaType"`
+	PsRootPort *int32 `json:"psRootPort,omitempty" protobuf:"varint,1,opt,name=psRootPort"`
 }
 
 // MXReplicaStatus mxnet replica status
 type MXReplicaStatus struct {
-	MXReplicaType `json:"mx_replica_type"`
-	// State is the overall state of the replica
-	State ReplicaState `json:"state"`
-	// ReplicasStates provides the number of replicas in each status.
-	ReplicasStates map[ReplicaState]int
+	// The number of actively running pods.
+	Active int32 `json:"active,omitempty""`
+
+	// The number of pods which reached phase Succeeded.
+	Succeeded int32 `json:"succeeded,omitempty"`
+
+	// The number of pods which reached phase Failed.
+	Failed int32 `json:"failed,omitempty"`
 }
 
 // MXReplicaType determines how a set of MX processes are handled.
 type MXReplicaType string
 
 const (
-	// SCHEDULER mxnet training job replica type
-	SCHEDULER MXReplicaType = "SCHEDULER"
-	// SERVER mxnet training job replica type
-	SERVER MXReplicaType = "SERVER"
-	// WORKER mxnet training job replica type
-	WORKER MXReplicaType = "WORKER"
+	// scheduler mxnet training job replica type
+	SCHEDULER MXReplicaType = "scheduler"
+	// server mxnet training job replica type
+	SERVER MXReplicaType = "server"
+	// worker mxnet training job replica type
+	WORKER MXReplicaType = "worker"
 )
 
 // MXJobPhase is the mxnet job phase
@@ -89,34 +112,4 @@ const (
 	MXJobPhaseFailed MXJobPhase = "Failed"
 	// MXJobPhaseDone job phase done
 	MXJobPhaseDone MXJobPhase = "Done"
-)
-
-// State mxnet job state
-type State string
-
-const (
-	// StateUnknown state unknown
-	StateUnknown State = "Unknown"
-	// StateRunning state running
-	StateRunning State = "Running"
-	// StateSucceeded state succeeded
-	StateSucceeded State = "Succeeded"
-	// StateFailed state failed
-	StateFailed State = "Failed"
-)
-
-// ReplicaState mxnet job replica state
-type ReplicaState string
-
-const (
-	// ReplicaStateUnknown replica state unknown
-	ReplicaStateUnknown ReplicaState = "Unknown"
-	// ReplicaStateStarting replica state starting
-	//ReplicaStateStarting = "Starting"
-	// ReplicaStateRunning replica state running
-	ReplicaStateRunning = "Running"
-	// ReplicaStateFailed replica state failed
-	ReplicaStateFailed = "Failed"
-	// ReplicaStateSucceeded replica state succeeded
-	ReplicaStateSucceeded = "Succeeded"
 )
