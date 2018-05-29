@@ -1,4 +1,28 @@
 apiVersion: "qiniu.com/v1alpha1"
 kind: "MXJob"
 metadata:
-  name: "example"
+  name: "mxjob-example"
+spec:
+  replicaSpecs:
+    scheduler:
+      replicas: 1
+      psRootPort: 9091
+      template:
+        spec:
+          containers:
+            - image: base-mxnet-py27-cpu:latest
+          restartPolicy: OnFailure
+    server:
+      replicas: 2 
+      template:
+        spec:
+          containers:
+            - image: base-mxnet-py27-cpu:latest
+          restartPolicy: OnFailure
+    worker:
+      replicas: 3
+      template:
+        spec:
+          containers:
+            - image: base-mxnet-py27-cpu:latest
+          restartPolicy: OnFailure
