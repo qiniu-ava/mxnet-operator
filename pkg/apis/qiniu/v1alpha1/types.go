@@ -33,7 +33,7 @@ type MXJobSpec struct {
 
 type MXJobStatus struct {
 	// Phase is the MXJob running phase
-	Phase MXJobPhase `json:"phase"`
+	//Phase MXJobPhase `json:"phase"`
 
 	// ReplicaStatuses specifies the status of each MX replica.
 	ReplicaStatuses *MXReplicaStatuses `json:"replicaStatuses"`
@@ -49,7 +49,7 @@ type MXJobStatus struct {
 	CompletionTime *metav1.Time `json:"completionTime,omitempty"`
 
 	// Represents is an array of current observed MXJob conditions.
-	//Conditions []MXJobCondition `json:"conditions"`
+	Conditions []MXJobCondition `json:"conditions"`
 }
 
 // MXReplicaStatuses is the status collection of mxnet replica.
@@ -89,11 +89,11 @@ type MXReplicaType string
 
 const (
 	// scheduler mxnet training job replica type
-	SCHEDULER MXReplicaType = "scheduler"
+	MXReplicaTypeScheduler MXReplicaType = "scheduler"
 	// server mxnet training job replica type
-	SERVER MXReplicaType = "server"
+	MXReplicaTypeServer MXReplicaType = "server"
 	// worker mxnet training job replica type
-	WORKER MXReplicaType = "worker"
+	MXReplicaTypeWorker MXReplicaType = "worker"
 )
 
 // MXJobPhase is the mxnet job phase
@@ -112,4 +112,65 @@ const (
 	MXJobPhaseFailed MXJobPhase = "Failed"
 	// MXJobPhaseDone job phase done
 	MXJobPhaseDone MXJobPhase = "Done"
+)
+
+// MXJobCondition describes the state of the MXJob at a certain point.
+type MXJobCondition struct {
+	// Type of MXJob condition.
+	Type MXJobConditionType `json:"type"`
+	// Status of the condition, one of True, False, Unknown.
+	Status v1.ConditionStatus `json:"status"`
+	// The reason for the condition's last transition.
+	Reason MXJobReason `json:"reason,omitempty"`
+	// A human readable message indicating details about the transition.
+	Message string `json:"message,omitempty"`
+	// The last time this condition was updated.
+	LastUpdateTime metav1.Time `json:"lastUpdateTime,omitempty"`
+	// Last time the condition transitioned from one status to another.
+	LastTransitionTime metav1.Time `json:"lastTransitionTime,omitempty"`
+}
+
+// MXJobConditionType defines all kinds of types of MXJobStatus.
+type MXJobConditionType string
+
+const (
+	// MXJobCreated means the mxjob has been accepted by the system,
+	// but one or more of the pods/services has not been started.
+	// This includes time before pods being scheduled and launched.
+	MXJobCreated MXJobConditionType = "Created"
+
+	// MXJobRunning means all sub-resources (e.g. services/pods) of this MXJob
+	// have been successfully scheduled and launched.
+	// The training is running without error.
+	MXJobRunning MXJobConditionType = "Running"
+
+	// MXJobRestarting means one or more sub-resources (e.g. services/pods) of this MXJob
+	// reached phase failed but maybe restarted according to it's restart policy
+	// which specified by user in v1.PodTemplateSpec.
+	// The training is freezing/pending.
+	MXJobRestarting MXJobConditionType = "Restarting"
+
+	// MXJobSucceeded means all sub-resources (e.g. services/pods) of this MXJob
+	// reached phase have terminated in success.
+	// The training is complete without error.
+	MXJobSucceeded MXJobConditionType = "Succeeded"
+
+	// MXJobFailed means one or more sub-resources (e.g. services/pods) of this MXJob
+	// reached phase failed with no restarting.
+	// The training has failed its execution.
+	MXJobFailed MXJobConditionType = "Failed"
+)
+
+// MXJobReason defines reasons of the MXJobCondition.
+type MXJobReason string
+
+const (
+	// MXJobReasonCreated is added in a mxjob when it is created.
+	MXJobReasonCreated = "MXJobCreated"
+	// MXJobReasonSucceeded is added in a mxjob when it is succeeded.
+	MXJobReasonSucceeded = "MXJobSucceeded"
+	// MXJobReasonRunning is added in a mxjob when it is running.
+	MXJobReasonRunning = "MXJobRunning"
+	// MXJobReasonFailed is added in a mxjob when it is failed.
+	MXJobReasonFailed = "MXJobFailed"
 )

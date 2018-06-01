@@ -11,13 +11,15 @@ import (
 const (
 	version   = "v1alpha1"
 	groupName = "qiniu.com"
+	kind      = "MXJob"
 )
 
 var (
 	SchemeBuilder = runtime.NewSchemeBuilder(addKnownTypes)
 	AddToScheme   = SchemeBuilder.AddToScheme
 	// SchemeGroupVersion is the group version used to register these objects.
-	SchemeGroupVersion = schema.GroupVersion{Group: groupName, Version: version}
+	SchemeGroupVersion     = schema.GroupVersion{Group: groupName, Version: version}
+	SchemeGroupVersionKind = SchemeGroupVersion.WithKind(kind)
 )
 
 func init() {
