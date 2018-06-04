@@ -22,7 +22,20 @@ type MXJob struct {
 	Status            MXJobStatus `json:"status,omitempty"`
 }
 
+// MXJobSpec is a desired state description of the MXJob.
 type MXJobSpec struct {
+	// MXReplicaSpecs is map of MXReplicaType and MXReplicaSpec
+	// specifies the MX replicas to run.
+	// For example,
+	//   {
+	//     "scheduler": MXReplicaSpec,
+	//     "server": MXReplicaSpec,
+	//     "worker": MXReplicaSpe,
+	//   }
+	MXReplicaSpecs MXReplicaSpecs `json:"replicaSpecs"`
+}
+
+type MXReplicaSpecs struct {
 	// ReplicaSpecs specifies the MX scheduler replicas to run.
 	Scheduler *MXReplicaSpec `json:"scheduler,omitempty"`
 	// ReplicaSpecs specifies the MX server replicas to run.
@@ -36,7 +49,7 @@ type MXJobStatus struct {
 	//Phase MXJobPhase `json:"phase"`
 
 	// ReplicaStatuses specifies the status of each MX replica.
-	ReplicaStatuses *MXReplicaStatuses `json:"replicaStatuses"`
+	ReplicaStatuses MXReplicaStatuses `json:"replicaStatuses"`
 
 	// Represents time when the MXJob was acknowledged by the MXJob controller.
 	// It is not guaranteed to be set in happens-before order across separate operations.

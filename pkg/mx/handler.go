@@ -3,7 +3,9 @@ package mx
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"strings"
+	"time"
 
 	"github.com/operator-framework/operator-sdk/pkg/sdk"
 	"github.com/qiniu-ava/mxnet-operator/pkg/apis/qiniu/v1alpha1"
@@ -20,10 +22,14 @@ import (
 	"k8s.io/kubernetes/pkg/controller"
 )
 
+const (
+	mxLabelReplicaType = "mx-replica-type"
+	mxLabelJobName     = "mxjob-name"
+	mxLabelGroupName   = "group-name"
+)
+
 var (
 	controllerName = "mxnet-operator"
-
-	mxReplicaTypeLabel = "mx-replica-type"
 
 	// KeyFunc is the short name to DeletionHandlingMetaNamespaceKeyFunc.
 	// IndexerInformer uses a delta queue, therefore for deletes we have to use this
@@ -56,6 +62,8 @@ type Handler struct {
 	// - "mx-operator/mxjob-abc/server/pods", expects 3 adds.
 	// - "mx-operator/mxjob-abc/worker/pods", expects 3 adds.
 	expectations controller.ControllerExpectationsInterface
+
+	recorder record.EventRecorder
 }
 
 // NewHandler creates a Handler.
@@ -66,29 +74,47 @@ func NewHandler() *Handler {
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartLogging(logrus.Infof)
 	eventBroadcaster.StartRecordingToSink(&typedcorev1.EventSinkImpl{Interface: kubeClientSet.CoreV1().Events("")})
-	//recorder := eventBroadcaster.NewRecorder(scheme.Scheme, v1.EventSource{Component: controllerName})
+	recorder := eventBroadcaster.NewRecorder(scheme.Scheme, v1.EventSource{Component: controllerName})
 
 	realPodControl := controller.RealPodControl{
 		KubeClient: kubeClientSet,
-		Recorder:   eventBroadcaster.NewRecorder(scheme.Scheme, v1.EventSource{Component: controllerName}),
+		Recorder:   recorder,
 	}
 
 	return &Handler{
 		podControl:   realPodControl,
 		expectations: controller.NewControllerExpectations(),
+		recorder:     recorder,
 	}
 }
 
 // Sync synchronizes mxjobs.
 func (h *Handler) Sync(ctx context.Context, mxjob *v1alpha1.MXJob, deleted bool) error {
-	mxjobNeedsSync := h.satisfiedExpectations(mxjob)
+	mxjobKey, err := KeyFunc(mxjob)
+	if err != nil {
+		utilruntime.HandleError(fmt.Errorf("Couldn't get key for mxjob object %#v: %v", mxjob, err))
+		return err
+	}
+
+	startTime := time.Now()
+	defer func() {
+		logrus.Infof("finished syncing mxjob %s (%v)", mxjobKey, time.Since(startTime))
+	}()
+
+	if deleted {
+		logrus.Infof("mxjob %s has been deleted", mxjobKey)
+		return nil
+	}
+
+	// expectations are not used since getPodsForMXJob returns live Pods
+	// or sync or not will be decided by h.satisfiedExpectations(mxjob) if list cache is enabled
+	mxjobNeedsSync := true
 
 	var reconcileMXJobsErr error
 	if mxjobNeedsSync && mxjob.DeletionTimestamp == nil {
 		reconcileMXJobsErr = h.reconcileMXJobs(mxjob)
 	}
 
-	// TODO: sync status
 	return reconcileMXJobsErr
 }
 
@@ -102,45 +128,51 @@ func (h *Handler) reconcileMXJobs(mxjob *v1alpha1.MXJob) error {
 		return err
 	}
 
-	// Diff current active pods/services with replicas.
-	if mxjob.Spec.Scheduler != nil {
-		err = h.reconcilePods(mxjob, pods, v1alpha1.MXReplicaTypeScheduler, mxjob.Spec.Scheduler)
+	oldStatus := mxjob.Status.DeepCopy()
+
+	// reconcile active pods/services with replicas.
+	if mxjob.Spec.MXReplicaSpecs.Scheduler != nil {
+		err = h.reconcilePods(mxjob, pods, v1alpha1.MXReplicaTypeScheduler, mxjob.Spec.MXReplicaSpecs.Scheduler)
 		if err != nil {
 			logrus.Infof("reconcilePods error %v", err)
 			return err
 		}
 	}
-	if mxjob.Spec.Server != nil {
-		err = h.reconcilePods(mxjob, pods, v1alpha1.MXReplicaTypeServer, mxjob.Spec.Server)
+	if mxjob.Spec.MXReplicaSpecs.Server != nil {
+		err = h.reconcilePods(mxjob, pods, v1alpha1.MXReplicaTypeServer, mxjob.Spec.MXReplicaSpecs.Server)
 		if err != nil {
 			logrus.Infof("reconcilePods error %v", err)
 			return err
 		}
 	}
-	if mxjob.Spec.Worker != nil {
-		err = h.reconcilePods(mxjob, pods, v1alpha1.MXReplicaTypeWorker, mxjob.Spec.Worker)
+	if mxjob.Spec.MXReplicaSpecs.Worker != nil {
+		err = h.reconcilePods(mxjob, pods, v1alpha1.MXReplicaTypeWorker, mxjob.Spec.MXReplicaSpecs.Worker)
 		if err != nil {
 			logrus.Infof("reconcilePods error %v", err)
 			return err
 		}
 	}
 
-	return sdk.Update(mxjob)
+	if !reflect.DeepEqual(*oldStatus, mxjob.Status) {
+		loggerForMXJob(mxjob).Infof("updating status %+v", mxjob.Status)
+		if err := sdk.Update(mxjob); err != nil {
+			return err
+		}
+	} else {
+		logrus.Debug("no status change, skip update")
+	}
+
+	return nil
 }
 
 // getPodsForMXJob returns the set of pods that this mxjob should manage.
 // It also reconciles ControllerRef by adopting/orphaning.
-// Note that the returned Pods are pointers into the cache.
+// Note that the returned are live Pods from apiserver,
+// because sdk do not provide the capability to list from local cache for now.
 func (h *Handler) getPodsForMXJob(mxjob *v1alpha1.MXJob) ([]*v1.Pod, error) {
-	mxjobKey, err := KeyFunc(mxjob)
-	if err != nil {
-		utilruntime.HandleError(fmt.Errorf("Couldn't get key for mxjob object %#v: %v", mxjob, err))
-		return nil, err
-	}
-
 	// Create selector.
 	selector, err := metav1.LabelSelectorAsSelector(&metav1.LabelSelector{
-		MatchLabels: genLabels(mxjobKey),
+		MatchLabels: genLabels(mxjob, ""),
 	})
 
 	if err != nil {
@@ -189,6 +221,7 @@ func (h *Handler) reconcilePods(mxjob *v1alpha1.MXJob, pods []*v1.Pod, rtype v1a
 
 	// Get all pods for the type rt.
 	pods = filterPodsForMXReplicaType(pods, rtype)
+	loggerForReplica(mxjob, rtype).Infof("reconcile %d pods", len(pods))
 	replicas := int(*spec.Replicas)
 	diff := replicas - len(pods)
 
@@ -196,45 +229,36 @@ func (h *Handler) reconcilePods(mxjob *v1alpha1.MXJob, pods []*v1.Pod, rtype v1a
 
 	if diff > 0 {
 		for i := 0; i < diff; i++ {
-			loggerForReplica(mxjob, rtype).Infof("need to create new pod (%d/%d): %s", i+1, diff, rtype)
+			loggerForReplica(mxjob, rtype).Infof("creating new pod (%d/%d): %s", i+1, diff, rtype)
 			err := h.createNewPod(mxjob, rtype, spec)
 			if err != nil {
 				return err
 			}
 		}
 	} else if diff < 0 {
+		loggerForReplica(mxjob, rtype).Infof("need to delete number of pod: %d", -diff)
 		// TODO:
+	} else { // sync status
+		activePods := controller.FilterActivePods(pods)
+		active := int32(len(activePods))
+		succeeded, failed := getStatus(pods)
+		status := v1alpha1.MXReplicaStatus{Active: active, Succeeded: succeeded, Failed: failed}
+		loggerForReplica(mxjob, rtype).Infof("sync status %+v", status)
+		updateMXReplicaStatuses(mxjob, rtype, &status)
 	}
 
-	return h.updateStatus(mxjob, rtype, replicas)
+	return h.updateMXJobStatus(mxjob, rtype, replicas)
 }
 
 // createNewPod creates a new pod for the given replica type.
 func (h *Handler) createNewPod(mxjob *v1alpha1.MXJob, rt v1alpha1.MXReplicaType, spec *v1alpha1.MXReplicaSpec) error {
-	mxjobKey, err := KeyFunc(mxjob)
-	if err != nil {
-		utilruntime.HandleError(fmt.Errorf("Couldn't get key for mxjob object %#v: %v", mxjob, err))
-		return err
-	}
-	expectationPodsKey := genExpectationPodsKey(mxjobKey, rt)
-	err = h.expectations.ExpectCreations(expectationPodsKey, 1)
-	if err != nil {
-		return err
-	}
-
-	// Create OwnerReference.
-	controllerRef := genOwnerReference(mxjob)
-
-	// Set type for the pod.
-	labels := genLabels(mxjobKey)
-	labels[mxReplicaTypeLabel] = string(rt)
-
 	podTemplate := spec.Template.DeepCopy()
 
+	// Set type for the pod.
+	labels := genLabels(mxjob, rt)
 	if podTemplate.Labels == nil {
 		podTemplate.Labels = make(map[string]string)
 	}
-
 	for key, value := range labels {
 		podTemplate.Labels[key] = value
 	}
@@ -247,7 +271,7 @@ func (h *Handler) createNewPod(mxjob *v1alpha1.MXJob, rt v1alpha1.MXReplicaType,
 		}
 	}
 
-	err = h.podControl.CreatePodsWithControllerRef(mxjob.Namespace, podTemplate, mxjob, controllerRef)
+	err := h.podControl.CreatePodsWithControllerRef(mxjob.Namespace, podTemplate, mxjob, metav1.NewControllerRef(mxjob, v1alpha1.SchemeGroupVersionKind))
 	if err != nil && errors.IsTimeout(err) {
 		// Pod is created but its initialization has timed out.
 		// If the initialization is successful eventually, the
@@ -263,8 +287,8 @@ func (h *Handler) createNewPod(mxjob *v1alpha1.MXJob, rt v1alpha1.MXReplicaType,
 	return nil
 }
 
-// updateStatus updates the status of the mxjob.
-func (h *Handler) updateStatus(mxjob *v1alpha1.MXJob, rtype v1alpha1.MXReplicaType, replicas int) error {
+// updateMXJobStatus updates the status of the mxjob.
+func (h *Handler) updateMXJobStatus(mxjob *v1alpha1.MXJob, rtype v1alpha1.MXReplicaType, replicas int) error {
 	// Expect to have `replicas - succeeded` pods alive.
 	status := getMXReplicaStatus(mxjob, rtype)
 	expected := replicas - int(status.Succeeded)
@@ -301,7 +325,7 @@ func (h *Handler) updateStatus(mxjob *v1alpha1.MXJob, rtype v1alpha1.MXReplicaTy
 		}
 	}
 
-	// Some workers or pss are failed , leave a failed condition.
+	// Some workers, servers or schedulers are failed , leave a failed condition.
 	if failed > 0 {
 		msg := fmt.Sprintf("MXJob %s is failed.", mxjob.Name)
 		err := h.updateMXJobConditions(mxjob, v1alpha1.MXJobFailed, v1alpha1.MXJobReasonFailed, msg)
@@ -329,19 +353,19 @@ func (h *Handler) satisfiedExpectations(mxjob *v1alpha1.MXJob) bool {
 		return false
 	}
 
-	if mxjob.Spec.Scheduler != nil {
+	if mxjob.Spec.MXReplicaSpecs.Scheduler != nil {
 		// Check the expectations of the pods.
 		expectationPodsKey := genExpectationPodsKey(mxjobKey, v1alpha1.MXReplicaTypeScheduler)
 		satisfied = satisfied || h.expectations.SatisfiedExpectations(expectationPodsKey)
 	}
 
-	if mxjob.Spec.Server != nil {
+	if mxjob.Spec.MXReplicaSpecs.Server != nil {
 		// Check the expectations of the pods.
 		expectationPodsKey := genExpectationPodsKey(mxjobKey, v1alpha1.MXReplicaTypeServer)
 		satisfied = satisfied || h.expectations.SatisfiedExpectations(expectationPodsKey)
 	}
 
-	if mxjob.Spec.Worker != nil {
+	if mxjob.Spec.MXReplicaSpecs.Worker != nil {
 		// Check the expectations of the pods.
 		expectationPodsKey := genExpectationPodsKey(mxjobKey, v1alpha1.MXReplicaTypeWorker)
 		satisfied = satisfied || h.expectations.SatisfiedExpectations(expectationPodsKey)
@@ -384,7 +408,7 @@ func filterPodsForMXReplicaType(pods []*v1.Pod, rtype v1alpha1.MXReplicaType) []
 		MatchLabels: make(map[string]string),
 	}
 
-	mxReplicaSelector.MatchLabels[mxReplicaTypeLabel] = string(rtype)
+	mxReplicaSelector.MatchLabels[mxLabelReplicaType] = string(rtype)
 
 	for _, pod := range pods {
 		selector, _ := metav1.LabelSelectorAsSelector(mxReplicaSelector)
@@ -420,6 +444,20 @@ func getMXReplicaStatus(mxjob *v1alpha1.MXJob, rtype v1alpha1.MXReplicaType) *v1
 		return mxjob.Status.ReplicaStatuses.Worker
 	}
 	return nil
+}
+
+// updateMXJobReplicaStatuses updates the MXJobReplicaStatuses according to the pod.
+// pod phase: https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/#pod-phase
+func updateMXReplicaStatuses(mxjob *v1alpha1.MXJob, rtype v1alpha1.MXReplicaType, replicaStatus *v1alpha1.MXReplicaStatus) {
+	switch rtype {
+	case v1alpha1.MXReplicaTypeScheduler:
+		mxjob.Status.ReplicaStatuses.Scheduler = replicaStatus
+	case v1alpha1.MXReplicaTypeServer:
+		mxjob.Status.ReplicaStatuses.Server = replicaStatus
+	case v1alpha1.MXReplicaTypeWorker:
+		mxjob.Status.ReplicaStatuses.Worker = replicaStatus
+	}
+	return
 }
 
 // newCondition creates a new mxjob condition.
@@ -487,20 +525,6 @@ func genExpectationPodsKey(mxjobKey string, replicaType v1alpha1.MXReplicaType) 
 	return mxjobKey + "/" + strings.ToLower(string(replicaType)) + "/pods"
 }
 
-func genOwnerReference(mxjob *v1alpha1.MXJob) *metav1.OwnerReference {
-	boolPtr := func(b bool) *bool { return &b }
-	controllerRef := &metav1.OwnerReference{
-		APIVersion:         v1alpha1.SchemeGroupVersion.String(),
-		Kind:               v1alpha1.SchemeGroupVersionKind.Kind,
-		Name:               mxjob.Name,
-		UID:                mxjob.UID,
-		BlockOwnerDeletion: boolPtr(true),
-		Controller:         boolPtr(true),
-	}
-
-	return controllerRef
-}
-
 func genMXConfigEnv(mxjob *v1alpha1.MXJob, rtype v1alpha1.MXReplicaType) (ret map[string]string) {
 	ret = make(map[string]string)
 	// TODO:
@@ -529,9 +553,31 @@ func RecheckDeletionTimestamp(getObject func() (metav1.Object, error)) func() er
 	}
 }
 
-func genLabels(mxjobKey string) map[string]string {
-	return map[string]string{
-		"group_name": v1alpha1.SchemeGroupVersion.Group,
-		"mx_job_key": strings.Replace(mxjobKey, "/", "-", -1),
+func genLabels(mxjob *v1alpha1.MXJob, rt v1alpha1.MXReplicaType) map[string]string {
+	l := map[string]string{
+		mxLabelGroupName: v1alpha1.SchemeGroupVersion.Group,
+		mxLabelJobName:   mxjob.Name,
 	}
+	if rt != "" {
+		l[mxLabelReplicaType] = string(rt)
+	}
+	return l
+}
+
+// getStatus returns no of succeeded and failed pods running a job
+func getStatus(pods []*v1.Pod) (succeeded, failed int32) {
+	succeeded = int32(filterPods(pods, v1.PodSucceeded))
+	failed = int32(filterPods(pods, v1.PodFailed))
+	return
+}
+
+// filterPods returns pods based on their phase.
+func filterPods(pods []*v1.Pod, phase v1.PodPhase) int {
+	result := 0
+	for i := range pods {
+		if phase == pods[i].Status.Phase {
+			result++
+		}
+	}
+	return result
 }
