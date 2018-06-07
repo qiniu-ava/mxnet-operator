@@ -20,6 +20,7 @@ func printVersion() {
 
 func main() {
 	printVersion()
+	logrus.SetLevel(logrus.DebugLevel)
 
 	apiVersion := v1alpha1.SchemeGroupVersion.String()
 	kind := v1alpha1.SchemeGroupVersionKind.Kind
