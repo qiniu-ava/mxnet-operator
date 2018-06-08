@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/operator-framework/operator-sdk/pkg/sdk"
@@ -248,12 +249,26 @@ func (h *Handler) reconcilePods(mxjob *v1alpha1.MXJob, pods []*v1.Pod, rtype v1a
 			// after mxjob have been initialized, if any pod is deleted, will term the entire mxjob
 			status.Gone = int32(diff)
 		} else {
+			wait := sync.WaitGroup{}
+			wait.Add(diff)
+			errCh := make(chan error, diff)
+			loggerForReplica(mxjob, rtype).Infof("creating %d new pod: %s", diff, rtype)
 			for i := 0; i < diff; i++ {
-				loggerForReplica(mxjob, rtype).Infof("creating new pod (%d/%d): %s", i+1, diff, rtype)
-				err := h.createNewPod(mxjob, rtype, spec)
-				if err != nil {
-					return err
-				}
+				go func() {
+					defer wait.Done()
+					err := h.createNewPod(mxjob, rtype, spec)
+					if err != nil {
+						loggerForReplica(mxjob, rtype).Infof("failed to new pod of %s", rtype)
+						errCh <- err
+					}
+				}()
+			}
+			wait.Wait()
+
+			select {
+			case err := <-errCh:
+				return err
+			default:
 			}
 		}
 	} else if diff < 0 {
@@ -272,15 +287,36 @@ func (h *Handler) reconcilePods(mxjob *v1alpha1.MXJob, pods []*v1.Pod, rtype v1a
 	return h.updateMXJobStatus(mxjob, rtype, replicas)
 }
 
+// terminateMXJob deletes all active pods of mxjob and leave others.
 func (h *Handler) terminateMXJob(mxjob *v1alpha1.MXJob, pods []*v1.Pod) error {
 	loggerForMXJob(mxjob).Infof("terminating mxjob")
-	// delete active pods, leave others
 	activePods := controller.FilterActivePods(pods)
-	for i, p := range activePods {
-		loggerForMXJob(mxjob).Infof("deleting active pod (%d/%d): %s", i+1, len(activePods), p.Name)
-		if err := h.podControl.DeletePod(p.Namespace, p.Name, p); err != nil {
-			return err
-		}
+	num := len(activePods)
+	if num == 0 {
+		return nil
+	}
+
+	wait := sync.WaitGroup{}
+	wait.Add(num)
+	errCh := make(chan error, num)
+	loggerForMXJob(mxjob).Infof("deleting %d active pod", num)
+
+	for _, p := range activePods {
+		go func(pod *v1.Pod) {
+			defer wait.Done()
+			err := h.podControl.DeletePod(pod.Namespace, pod.Name, pod)
+			if err != nil {
+				loggerForMXJob(mxjob).Infof("failed to delete pod: %s/%s", pod.Namespace, pod.Name)
+				errCh <- err
+			}
+		}(p)
+	}
+	wait.Wait()
+
+	select {
+	case err := <-errCh:
+		return err
+	default:
 	}
 	return nil
 }
