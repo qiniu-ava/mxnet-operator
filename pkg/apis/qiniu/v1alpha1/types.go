@@ -83,6 +83,9 @@ type MXReplicaSpec struct {
 
 	// PsRootPort is the port to use for scheduler.
 	PsRootPort *int32 `json:"psRootPort,omitempty" protobuf:"varint,1,opt,name=psRootPort"`
+
+	// PsVerbose is the communication loggining level.
+	PsVerbose *int32 `json:"psRootPort,omitempty" protobuf:"varint,1,opt,name=psRootPort"`
 }
 
 // MXReplicaStatus mxnet replica status
