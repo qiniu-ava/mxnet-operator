@@ -90,30 +90,20 @@ func NewHandler() *Handler {
 
 // Sync synchronizes mxjobs.
 func (h *Handler) Sync(ctx context.Context, mxjob *v1alpha1.MXJob, deleted bool) error {
-	mxjobKey, err := KeyFunc(mxjob)
-	if err != nil {
-		utilruntime.HandleError(fmt.Errorf("Couldn't get key for mxjob object %#v: %v", mxjob, err))
-		return err
-	}
-
 	startTime := time.Now()
 	defer func() {
 		loggerForMXJob(mxjob).Infof("finished syncing mxjob (%v)", time.Since(startTime))
 	}()
 
 	if deleted {
-		logrus.Infof("mxjob %s has been deleted", mxjobKey)
+		loggerForMXJob(mxjob).Infof("mxjob has been deleted")
 		return nil
 	}
 
 	// add created condition first met
 	if !checkCondition(mxjob.Status, v1alpha1.MXJobCreated) {
 		msg := fmt.Sprintf("MXJob %s is created.", mxjob.Name)
-		err = h.updateMXJobConditions(mxjob, v1alpha1.MXJobCreated, v1alpha1.MXJobReasonCreated, msg)
-		if err != nil {
-			loggerForMXJob(mxjob).Infof("Append mxjob condition error: %v", err)
-			return err
-		}
+		h.updateMXJobConditions(mxjob, v1alpha1.MXJobCreated, v1alpha1.MXJobReasonCreated, msg)
 	}
 
 	// expectations are not used since getPodsForMXJob returns live Pods
@@ -166,16 +156,13 @@ func (h *Handler) reconcileMXJobs(mxjob *v1alpha1.MXJob) error {
 	// add initialized condition after all sub-resource created
 	if !checkCondition(mxjob.Status, v1alpha1.MXJobInitialized) {
 		msg := fmt.Sprintf("MXJob %s is initialized.", mxjob.Name)
-		err = h.updateMXJobConditions(mxjob, v1alpha1.MXJobInitialized, v1alpha1.MXJobReasonInitialized, msg)
-		if err != nil {
-			loggerForMXJob(mxjob).Infof("Append mxjob condition error: %v", err)
-			return err
-		}
+		h.updateMXJobConditions(mxjob, v1alpha1.MXJobInitialized, v1alpha1.MXJobReasonInitialized, msg)
 	}
 
 	// terminate job when get failed
 	if checkCondition(mxjob.Status, v1alpha1.MXJobFailed) {
 		if err := h.terminateMXJob(mxjob, pods); err != nil {
+			loggerForMXJob(mxjob).Infof("terminate mxjob error: %v", err)
 			return err
 		}
 	}
@@ -183,6 +170,7 @@ func (h *Handler) reconcileMXJobs(mxjob *v1alpha1.MXJob) error {
 	if !reflect.DeepEqual(*oldStatus, mxjob.Status) {
 		loggerForMXJob(mxjob).Infof("updating status %+v", mxjob.Status)
 		if err := sdk.Update(mxjob); err != nil {
+			loggerForMXJob(mxjob).Infof("update status error: %v", err)
 			return err
 		}
 	} else {
@@ -353,11 +341,7 @@ func (h *Handler) updateMXJobStatus(mxjob *v1alpha1.MXJob, rtype v1alpha1.MXRepl
 		// Some workers are still running, leave a running condition.
 		if running > 0 {
 			msg := fmt.Sprintf("MXJob %s is running.", mxjob.Name)
-			err := h.updateMXJobConditions(mxjob, v1alpha1.MXJobRunning, v1alpha1.MXJobReasonRunning, msg)
-			if err != nil {
-				loggerForMXJob(mxjob).Infof("Append mxjob condition error: %v", err)
-				return err
-			}
+			h.updateMXJobConditions(mxjob, v1alpha1.MXJobRunning, v1alpha1.MXJobReasonRunning, msg)
 		}
 
 		// All workers are succeeded, leave a succeeded condition.
@@ -365,30 +349,21 @@ func (h *Handler) updateMXJobStatus(mxjob *v1alpha1.MXJob, rtype v1alpha1.MXRepl
 			msg := fmt.Sprintf("MXJob %s is successfully completed.", mxjob.Name)
 			now := metav1.Now()
 			mxjob.Status.CompletionTime = &now
-			err := h.updateMXJobConditions(mxjob, v1alpha1.MXJobSucceeded, v1alpha1.MXJobReasonSucceeded, msg)
-			if err != nil {
-				loggerForMXJob(mxjob).Infof("Append mxjob condition error: %v", err)
-				return err
-			}
+			h.updateMXJobConditions(mxjob, v1alpha1.MXJobSucceeded, v1alpha1.MXJobReasonSucceeded, msg)
 		}
 	}
 
 	// Some workers, servers or schedulers are failed or gone, leave a failed condition.
 	if failed > 0 || gone > 0 {
 		msg := fmt.Sprintf("MXJob %s is failed.", mxjob.Name)
-		err := h.updateMXJobConditions(mxjob, v1alpha1.MXJobFailed, v1alpha1.MXJobReasonFailed, msg)
-		if err != nil {
-			loggerForMXJob(mxjob).Infof("Append mxjob condition error: %v", err)
-			return err
-		}
+		h.updateMXJobConditions(mxjob, v1alpha1.MXJobFailed, v1alpha1.MXJobReasonFailed, msg)
 	}
 	return nil
 }
 
-func (h *Handler) updateMXJobConditions(mxjob *v1alpha1.MXJob, conditionType v1alpha1.MXJobConditionType, reason v1alpha1.MXJobReason, message string) error {
+func (h *Handler) updateMXJobConditions(mxjob *v1alpha1.MXJob, conditionType v1alpha1.MXJobConditionType, reason v1alpha1.MXJobReason, message string) {
 	condition := newCondition(conditionType, reason, message)
 	setCondition(&mxjob.Status, condition)
-	return nil
 }
 
 // satisfiedExpectations returns true if the required adds/dels for the given mxjob have been observed.
