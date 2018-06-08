@@ -10,6 +10,7 @@ import (
 
 	"github.com/operator-framework/operator-sdk/pkg/sdk"
 	"github.com/qiniu-ava/mxnet-operator/pkg/apis/qiniu/v1alpha1"
+	scontroller "github.com/qiniu-ava/mxnet-operator/pkg/controller"
 	"github.com/sirupsen/logrus"
 	"k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -42,6 +43,9 @@ var (
 type Handler struct {
 	// podControl is used to add or delete pods.
 	podControl controller.PodControlInterface
+
+	// serviceControl is used to add or delete services.
+	serviceControl scontroller.ServiceControlInterface
 
 	// A TTLCache of pod/services creates/deletes each mxjob expects to see
 	// We use MXJob namespace/name + MXReplicaType + pods/services as an expectation key,
@@ -82,10 +86,16 @@ func NewHandler() *Handler {
 		Recorder:   recorder,
 	}
 
+	realServiceControl := scontroller.RealServiceControl{
+		KubeClient: kubeClientSet,
+		Recorder:   eventBroadcaster.NewRecorder(scheme.Scheme, v1.EventSource{Component: controllerName}),
+	}
+
 	return &Handler{
-		podControl:   realPodControl,
-		expectations: controller.NewControllerExpectations(),
-		recorder:     recorder,
+		podControl:     realPodControl,
+		serviceControl: realServiceControl,
+		expectations:   controller.NewControllerExpectations(),
+		recorder:       recorder,
 	}
 }
 
@@ -123,7 +133,6 @@ func (h *Handler) reconcileMXJobs(mxjob *v1alpha1.MXJob) error {
 	loggerForMXJob(mxjob).Infof("Reconcile MXJobs %s", mxjob.Name)
 
 	pods, err := h.getPodsForMXJob(mxjob)
-
 	if err != nil {
 		loggerForMXJob(mxjob).Infof("getPodsForMXJob error %v", err)
 		return err
@@ -136,6 +145,18 @@ func (h *Handler) reconcileMXJobs(mxjob *v1alpha1.MXJob) error {
 		err = h.reconcilePods(mxjob, pods, v1alpha1.MXReplicaTypeScheduler, mxjob.Spec.MXReplicaSpecs.Scheduler)
 		if err != nil {
 			loggerForReplica(mxjob, v1alpha1.MXReplicaTypeScheduler).Infof("reconcilePods error %v", err)
+			return err
+		}
+
+		services, err := h.getServicesForMXJob(mxjob)
+		if err != nil {
+			loggerForMXJob(mxjob).Infof("getServicesForMXJob error %v", err)
+			return err
+		}
+
+		err = h.reconcileServices(mxjob, services, v1alpha1.MXReplicaTypeScheduler, mxjob.Spec.MXReplicaSpecs.Scheduler)
+		if err != nil {
+			loggerForReplica(mxjob, v1alpha1.MXReplicaTypeScheduler).Infof("reconcileServices error %v", err)
 			return err
 		}
 	}
@@ -231,6 +252,56 @@ func (h *Handler) getPodsForMXJob(mxjob *v1alpha1.MXJob) ([]*v1.Pod, error) {
 	return cm.ClaimPods(podList(pods))
 }
 
+// getServicesForMXJob returns the set of services that this mxjob should manage.
+// It also reconciles ControllerRef by adopting/orphaning.
+// Note that the returned are live services from apiserver,
+// because sdk do not provide the capability to list from local cache for now.
+func (h *Handler) getServicesForMXJob(mxjob *v1alpha1.MXJob) ([]*v1.Service, error) {
+	// Create selector.
+	selector, err := metav1.LabelSelectorAsSelector(&metav1.LabelSelector{
+		MatchLabels: genLabels(mxjob, ""),
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("couldn't convert Job selector: %v", err)
+	}
+	// List all services to include those that don't match the selector anymore
+	// but have a ControllerRef pointing to this controller.
+	services := v1.ServiceList{TypeMeta: metav1.TypeMeta{
+		Kind:       "Service",
+		APIVersion: "v1",
+	}}
+	err = sdk.List(mxjob.Namespace, &services, sdk.WithListOptions(&metav1.ListOptions{LabelSelector: labels.Everything().String()}))
+	if err != nil {
+		return nil, err
+	}
+
+	// If any adoptions are attempted, we should first recheck for deletion
+	// with an uncached quorum read sometime after listing Pods (see #42639).
+	canAdoptFunc := RecheckDeletionTimestamp(func() (metav1.Object, error) {
+		fresh := v1alpha1.MXJob{
+			TypeMeta: metav1.TypeMeta{
+				APIVersion: v1alpha1.SchemeGroupVersion.String(),
+				Kind:       v1alpha1.SchemeGroupVersionKind.Kind,
+			},
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      mxjob.Name,
+				Namespace: mxjob.Namespace,
+			},
+		}
+		err := sdk.Get(&fresh)
+		if err != nil {
+			return nil, err
+		}
+		if fresh.UID != mxjob.UID {
+			return nil, fmt.Errorf("original MXJob %v/%v is gone: got uid %v, wanted %v", mxjob.Namespace, mxjob.Name, fresh.UID, mxjob.UID)
+		}
+		return &fresh, nil
+	})
+	cm := scontroller.NewServiceControllerRefManager(h.serviceControl, mxjob, selector, v1alpha1.SchemeGroupVersionKind, canAdoptFunc)
+	return cm.ClaimServices(serviceList(services))
+}
+
 // reconcilePods checks and updates pods for each given MXReplicaSpec.
 // It will requeue the mxjob in case of an error while creating/deleting pods.
 func (h *Handler) reconcilePods(mxjob *v1alpha1.MXJob, pods []*v1.Pod, rtype v1alpha1.MXReplicaType, spec *v1alpha1.MXReplicaSpec) error {
@@ -285,6 +356,48 @@ func (h *Handler) reconcilePods(mxjob *v1alpha1.MXJob, pods []*v1.Pod, rtype v1a
 	updateMXReplicaStatuses(mxjob, rtype, &st)
 
 	return h.updateMXJobStatus(mxjob, rtype, replicas)
+}
+
+// reconcileServices checks and updates services for each given MXReplicaSpec.
+func (h *Handler) reconcileServices(mxjob *v1alpha1.MXJob, services []*v1.Service, rtype v1alpha1.MXReplicaType, spec *v1alpha1.MXReplicaSpec) error {
+	if rtype != v1alpha1.MXReplicaTypeScheduler {
+		loggerForReplica(mxjob, rtype).Infof("reconcile sevices for scheduler only")
+		return nil
+	}
+
+	loggerForReplica(mxjob, rtype).Infof("reconcile %d services", len(services))
+	num := len(services)
+
+	if num == 0 {
+		// create only one service for scheduler
+		loggerForReplica(mxjob, rtype).Infof("creating new service: %s", rtype)
+		labels := genLabels(mxjob, v1alpha1.MXReplicaTypeScheduler)
+		service := &v1.Service{
+			Spec: v1.ServiceSpec{
+				Selector: labels,
+				Ports: []v1.ServicePort{
+					{
+						Name: serviceName(mxjob, rtype),
+						Port: *spec.PsRootPort,
+					},
+				},
+			},
+		}
+		service.Name = serviceName(mxjob, rtype)
+		service.Labels = labels
+
+		err := h.serviceControl.CreateServicesWithControllerRef(mxjob.Namespace, service, mxjob, metav1.NewControllerRef(mxjob, v1alpha1.SchemeGroupVersionKind))
+		if err != nil && errors.IsTimeout(err) {
+			return nil
+		} else if err != nil {
+			loggerForReplica(mxjob, rtype).Infof("failed to new service of %s", rtype)
+			return err
+		}
+	} else if num > 1 {
+		loggerForReplica(mxjob, rtype).Infof("need to delete number of service: %d", num-1)
+		// TODO:
+	}
+	return nil
 }
 
 // terminateMXJob deletes all active pods of mxjob and leave others.
@@ -436,6 +549,14 @@ func podList(pods v1.PodList) (ret []*v1.Pod) {
 	for _, p := range pods.Items {
 		pod := p
 		ret = append(ret, &pod)
+	}
+	return
+}
+
+func serviceList(services v1.ServiceList) (ret []*v1.Service) {
+	for _, s := range services.Items {
+		service := s
+		ret = append(ret, &service)
 	}
 	return
 }
@@ -654,4 +775,8 @@ func filterPods(pods []*v1.Pod, phase v1.PodPhase) int {
 		}
 	}
 	return result
+}
+
+func serviceName(mxjob *v1alpha1.MXJob, rt v1alpha1.MXReplicaType) string {
+	return mxjob.Name + "-" + string(rt)
 }
