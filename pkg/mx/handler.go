@@ -90,20 +90,20 @@ func NewHandler() *Handler {
 
 // Sync synchronizes mxjobs.
 func (h *Handler) Sync(ctx context.Context, mxjob *v1alpha1.MXJob, deleted bool) error {
-	mxjobKey, err := KeyFunc(mxjob)
-	if err != nil {
-		utilruntime.HandleError(fmt.Errorf("Couldn't get key for mxjob object %#v: %v", mxjob, err))
-		return err
-	}
-
 	startTime := time.Now()
 	defer func() {
-		logrus.Infof("finished syncing mxjob %s (%v)", mxjobKey, time.Since(startTime))
+		loggerForMXJob(mxjob).Infof("finished syncing mxjob (%v)", time.Since(startTime))
 	}()
 
 	if deleted {
-		logrus.Infof("mxjob %s has been deleted", mxjobKey)
+		loggerForMXJob(mxjob).Infof("mxjob has been deleted")
 		return nil
+	}
+
+	// add created condition first met
+	if !checkCondition(mxjob.Status, v1alpha1.MXJobCreated) {
+		msg := fmt.Sprintf("MXJob %s is created.", mxjob.Name)
+		h.updateMXJobConditions(mxjob, v1alpha1.MXJobCreated, v1alpha1.MXJobReasonCreated, msg)
 	}
 
 	// expectations are not used since getPodsForMXJob returns live Pods
@@ -119,12 +119,12 @@ func (h *Handler) Sync(ctx context.Context, mxjob *v1alpha1.MXJob, deleted bool)
 }
 
 func (h *Handler) reconcileMXJobs(mxjob *v1alpha1.MXJob) error {
-	logrus.Infof("Reconcile MXJobs %s", mxjob.Name)
+	loggerForMXJob(mxjob).Infof("Reconcile MXJobs %s", mxjob.Name)
 
 	pods, err := h.getPodsForMXJob(mxjob)
 
 	if err != nil {
-		logrus.Infof("getPodsForMXJob error %v", err)
+		loggerForMXJob(mxjob).Infof("getPodsForMXJob error %v", err)
 		return err
 	}
 
@@ -134,21 +134,35 @@ func (h *Handler) reconcileMXJobs(mxjob *v1alpha1.MXJob) error {
 	if mxjob.Spec.MXReplicaSpecs.Scheduler != nil {
 		err = h.reconcilePods(mxjob, pods, v1alpha1.MXReplicaTypeScheduler, mxjob.Spec.MXReplicaSpecs.Scheduler)
 		if err != nil {
-			logrus.Infof("reconcilePods error %v", err)
+			loggerForReplica(mxjob, v1alpha1.MXReplicaTypeScheduler).Infof("reconcilePods error %v", err)
 			return err
 		}
 	}
 	if mxjob.Spec.MXReplicaSpecs.Server != nil {
 		err = h.reconcilePods(mxjob, pods, v1alpha1.MXReplicaTypeServer, mxjob.Spec.MXReplicaSpecs.Server)
 		if err != nil {
-			logrus.Infof("reconcilePods error %v", err)
+			loggerForReplica(mxjob, v1alpha1.MXReplicaTypeServer).Infof("reconcilePods error %v", err)
 			return err
 		}
 	}
 	if mxjob.Spec.MXReplicaSpecs.Worker != nil {
 		err = h.reconcilePods(mxjob, pods, v1alpha1.MXReplicaTypeWorker, mxjob.Spec.MXReplicaSpecs.Worker)
 		if err != nil {
-			logrus.Infof("reconcilePods error %v", err)
+			loggerForReplica(mxjob, v1alpha1.MXReplicaTypeWorker).Infof("reconcilePods error %v", err)
+			return err
+		}
+	}
+
+	// add initialized condition after all sub-resource created
+	if !checkCondition(mxjob.Status, v1alpha1.MXJobInitialized) {
+		msg := fmt.Sprintf("MXJob %s is initialized.", mxjob.Name)
+		h.updateMXJobConditions(mxjob, v1alpha1.MXJobInitialized, v1alpha1.MXJobReasonInitialized, msg)
+	}
+
+	// terminate job when get failed
+	if checkCondition(mxjob.Status, v1alpha1.MXJobFailed) {
+		if err := h.terminateMXJob(mxjob, pods); err != nil {
+			loggerForMXJob(mxjob).Infof("terminate mxjob error: %v", err)
 			return err
 		}
 	}
@@ -156,10 +170,11 @@ func (h *Handler) reconcileMXJobs(mxjob *v1alpha1.MXJob) error {
 	if !reflect.DeepEqual(*oldStatus, mxjob.Status) {
 		loggerForMXJob(mxjob).Infof("updating status %+v", mxjob.Status)
 		if err := sdk.Update(mxjob); err != nil {
+			loggerForMXJob(mxjob).Infof("update status error: %v", err)
 			return err
 		}
 	} else {
-		logrus.Debug("no status change, skip update")
+		loggerForMXJob(mxjob).Debug("no status change, skip update")
 	}
 
 	return nil
@@ -226,28 +241,48 @@ func (h *Handler) reconcilePods(mxjob *v1alpha1.MXJob, pods []*v1.Pod, rtype v1a
 	diff := replicas - len(pods)
 
 	initializeMXReplicaStatuses(mxjob, rtype)
+	status := getMXReplicaStatus(mxjob, rtype)
 
 	if diff > 0 {
-		for i := 0; i < diff; i++ {
-			loggerForReplica(mxjob, rtype).Infof("creating new pod (%d/%d): %s", i+1, diff, rtype)
-			err := h.createNewPod(mxjob, rtype, spec)
-			if err != nil {
-				return err
+		if checkCondition(mxjob.Status, v1alpha1.MXJobInitialized) {
+			// after mxjob have been initialized, if any pod is deleted, will term the entire mxjob
+			status.Gone = int32(diff)
+		} else {
+			for i := 0; i < diff; i++ {
+				loggerForReplica(mxjob, rtype).Infof("creating new pod (%d/%d): %s", i+1, diff, rtype)
+				err := h.createNewPod(mxjob, rtype, spec)
+				if err != nil {
+					return err
+				}
 			}
 		}
 	} else if diff < 0 {
 		loggerForReplica(mxjob, rtype).Infof("need to delete number of pod: %d", -diff)
 		// TODO:
-	} else { // sync status
-		activePods := controller.FilterActivePods(pods)
-		active := int32(len(activePods))
-		succeeded, failed := getStatus(pods)
-		status := v1alpha1.MXReplicaStatus{Active: active, Succeeded: succeeded, Failed: failed}
-		loggerForReplica(mxjob, rtype).Infof("sync status %+v", status)
-		updateMXReplicaStatuses(mxjob, rtype, &status)
 	}
 
+	// sync status with pods
+	activePods := controller.FilterActivePods(pods)
+	active := int32(len(activePods))
+	succeeded, failed := getStatus(pods)
+	st := v1alpha1.MXReplicaStatus{Active: active, Succeeded: succeeded, Failed: failed, Gone: status.Gone}
+	loggerForReplica(mxjob, rtype).Infof("sync status %+v", st)
+	updateMXReplicaStatuses(mxjob, rtype, &st)
+
 	return h.updateMXJobStatus(mxjob, rtype, replicas)
+}
+
+func (h *Handler) terminateMXJob(mxjob *v1alpha1.MXJob, pods []*v1.Pod) error {
+	loggerForMXJob(mxjob).Infof("terminating mxjob")
+	// delete active pods, leave others
+	activePods := controller.FilterActivePods(pods)
+	for i, p := range activePods {
+		loggerForMXJob(mxjob).Infof("deleting active pod (%d/%d): %s", i+1, len(activePods), p.Name)
+		if err := h.podControl.DeletePod(p.Namespace, p.Name, p); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // createNewPod creates a new pod for the given replica type.
@@ -294,6 +329,7 @@ func (h *Handler) updateMXJobStatus(mxjob *v1alpha1.MXJob, rtype v1alpha1.MXRepl
 	expected := replicas - int(status.Succeeded)
 	running := int(status.Active)
 	failed := int(status.Failed)
+	gone := int(status.Gone)
 
 	if rtype == v1alpha1.MXReplicaTypeWorker {
 		// All workers are running, set StartTime.
@@ -305,11 +341,7 @@ func (h *Handler) updateMXJobStatus(mxjob *v1alpha1.MXJob, rtype v1alpha1.MXRepl
 		// Some workers are still running, leave a running condition.
 		if running > 0 {
 			msg := fmt.Sprintf("MXJob %s is running.", mxjob.Name)
-			err := h.updateMXJobConditions(mxjob, v1alpha1.MXJobRunning, v1alpha1.MXJobReasonRunning, msg)
-			if err != nil {
-				loggerForMXJob(mxjob).Infof("Append mxjob condition error: %v", err)
-				return err
-			}
+			h.updateMXJobConditions(mxjob, v1alpha1.MXJobRunning, v1alpha1.MXJobReasonRunning, msg)
 		}
 
 		// All workers are succeeded, leave a succeeded condition.
@@ -317,30 +349,21 @@ func (h *Handler) updateMXJobStatus(mxjob *v1alpha1.MXJob, rtype v1alpha1.MXRepl
 			msg := fmt.Sprintf("MXJob %s is successfully completed.", mxjob.Name)
 			now := metav1.Now()
 			mxjob.Status.CompletionTime = &now
-			err := h.updateMXJobConditions(mxjob, v1alpha1.MXJobSucceeded, v1alpha1.MXJobReasonSucceeded, msg)
-			if err != nil {
-				loggerForMXJob(mxjob).Infof("Append mxjob condition error: %v", err)
-				return err
-			}
+			h.updateMXJobConditions(mxjob, v1alpha1.MXJobSucceeded, v1alpha1.MXJobReasonSucceeded, msg)
 		}
 	}
 
-	// Some workers, servers or schedulers are failed , leave a failed condition.
-	if failed > 0 {
+	// Some workers, servers or schedulers are failed or gone, leave a failed condition.
+	if failed > 0 || gone > 0 {
 		msg := fmt.Sprintf("MXJob %s is failed.", mxjob.Name)
-		err := h.updateMXJobConditions(mxjob, v1alpha1.MXJobFailed, v1alpha1.MXJobReasonFailed, msg)
-		if err != nil {
-			loggerForMXJob(mxjob).Infof("Append mxjob condition error: %v", err)
-			return err
-		}
+		h.updateMXJobConditions(mxjob, v1alpha1.MXJobFailed, v1alpha1.MXJobReasonFailed, msg)
 	}
 	return nil
 }
 
-func (h *Handler) updateMXJobConditions(mxjob *v1alpha1.MXJob, conditionType v1alpha1.MXJobConditionType, reason v1alpha1.MXJobReason, message string) error {
+func (h *Handler) updateMXJobConditions(mxjob *v1alpha1.MXJob, conditionType v1alpha1.MXJobConditionType, reason v1alpha1.MXJobReason, message string) {
 	condition := newCondition(conditionType, reason, message)
 	setCondition(&mxjob.Status, condition)
-	return nil
 }
 
 // satisfiedExpectations returns true if the required adds/dels for the given mxjob have been observed.
@@ -483,6 +506,12 @@ func getCondition(status v1alpha1.MXJobStatus, condType v1alpha1.MXJobConditionT
 	return nil
 }
 
+// checkCondition returns whether the condition is true
+func checkCondition(status v1alpha1.MXJobStatus, condType v1alpha1.MXJobConditionType) bool {
+	cond := getCondition(status, condType)
+	return cond != nil && cond.Status == v1.ConditionTrue
+}
+
 // setCondition updates the mxjob to include the provided condition.
 // If the condition that we are about to add already exists
 // and has the same status and reason then we are not going to update.
@@ -519,6 +548,15 @@ func filterOutCondition(conditions []v1alpha1.MXJobCondition, condType v1alpha1.
 		newConditions = append(newConditions, c)
 	}
 	return newConditions
+}
+
+func isJobFinished(status v1alpha1.MXJobStatus) bool {
+	for _, c := range status.Conditions {
+		if (c.Type == v1alpha1.MXJobSucceeded || c.Type == v1alpha1.MXJobFailed) && c.Status == v1.ConditionTrue {
+			return true
+		}
+	}
+	return false
 }
 
 func genExpectationPodsKey(mxjobKey string, replicaType v1alpha1.MXReplicaType) string {

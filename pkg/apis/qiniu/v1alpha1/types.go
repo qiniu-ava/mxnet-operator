@@ -95,6 +95,9 @@ type MXReplicaStatus struct {
 
 	// The number of pods which reached phase Failed.
 	Failed int32 `json:"failed,omitempty"`
+
+	// The number of pods which is deleted.
+	Gone int32 `json:"gone,omitempty"`
 }
 
 // MXReplicaType determines how a set of MX processes are handled.
@@ -152,6 +155,11 @@ const (
 	// This includes time before pods being scheduled and launched.
 	MXJobCreated MXJobConditionType = "Created"
 
+	// MXJobInitialized means all sub-resources (e.g. services/pods) of this MXJob
+	// have been successfully created.
+	// The training is starting to run.
+	MXJobInitialized MXJobConditionType = "Initialized"
+
 	// MXJobRunning means all sub-resources (e.g. services/pods) of this MXJob
 	// have been successfully scheduled and launched.
 	// The training is running without error.
@@ -180,6 +188,8 @@ type MXJobReason string
 const (
 	// MXJobReasonCreated is added in a mxjob when it is created.
 	MXJobReasonCreated = "MXJobCreated"
+	// MXJobReasonInitialized is added in a mxjob when it is initialized.
+	MXJobReasonInitialized = "MXJobInitialized"
 	// MXJobReasonSucceeded is added in a mxjob when it is succeeded.
 	MXJobReasonSucceeded = "MXJobSucceeded"
 	// MXJobReasonRunning is added in a mxjob when it is running.
