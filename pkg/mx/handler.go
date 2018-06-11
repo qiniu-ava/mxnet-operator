@@ -117,6 +117,11 @@ func (h *Handler) Sync(ctx context.Context, mxjob *v1alpha1.MXJob, deleted bool)
 		h.updateMXJobConditions(mxjob, v1alpha1.MXJobCreated, v1alpha1.MXJobReasonCreated, msg)
 	}
 
+	// if job was finished previously, we don't want to redo the termination
+	if isJobFinished(mxjob.Status) {
+		return nil
+	}
+
 	// expectations are not used since getPodsForMXJob returns live Pods
 	// or sync or not will be decided by h.satisfiedExpectations(mxjob) if list cache is enabled
 	mxjobNeedsSync := true
@@ -181,8 +186,8 @@ func (h *Handler) reconcileMXJobs(mxjob *v1alpha1.MXJob) error {
 		h.updateMXJobConditions(mxjob, v1alpha1.MXJobInitialized, v1alpha1.MXJobReasonInitialized, msg)
 	}
 
-	// terminate job when get failed
-	if checkCondition(mxjob.Status, v1alpha1.MXJobFailed) {
+	// terminate job when job is finished
+	if isJobFinished(mxjob.Status) {
 		if err := h.terminateMXJob(mxjob, pods); err != nil {
 			loggerForMXJob(mxjob).Infof("terminate mxjob error: %v", err)
 			return err
@@ -309,27 +314,38 @@ func (h *Handler) reconcilePods(mxjob *v1alpha1.MXJob, pods []*v1.Pod, rtype v1a
 	// Get all pods for the type rt.
 	pods = filterPodsForMXReplicaType(pods, rtype)
 	loggerForReplica(mxjob, rtype).Infof("reconcile %d pods", len(pods))
-	replicas := int(*spec.Replicas)
-	diff := replicas - len(pods)
+	replicas := *spec.Replicas
+	diff := replicas - int32(len(pods))
+
+	activePods := controller.FilterActivePods(pods)
+	active := int32(len(activePods))
 
 	initializeMXReplicaStatuses(mxjob, rtype)
 	status := getMXReplicaStatus(mxjob, rtype)
+	gone := status.Gone
 
 	if diff > 0 {
 		if checkCondition(mxjob.Status, v1alpha1.MXJobInitialized) {
 			// after mxjob have been initialized, if any pod is deleted, will term the entire mxjob
-			status.Gone = int32(diff)
+			gone = int32(diff)
 		} else {
+			var activeLock sync.Mutex
+			active += diff
+
 			wait := sync.WaitGroup{}
-			wait.Add(diff)
+			wait.Add(int(diff))
 			errCh := make(chan error, diff)
 			loggerForReplica(mxjob, rtype).Infof("creating %d new pod: %s", diff, rtype)
-			for i := 0; i < diff; i++ {
+
+			for i := int32(0); i < diff; i++ {
 				go func() {
 					defer wait.Done()
 					err := h.createNewPod(mxjob, rtype, spec)
 					if err != nil {
 						loggerForReplica(mxjob, rtype).Infof("failed to new pod of %s", rtype)
+						activeLock.Lock()
+						active--
+						activeLock.Unlock()
 						errCh <- err
 					}
 				}()
@@ -347,11 +363,8 @@ func (h *Handler) reconcilePods(mxjob *v1alpha1.MXJob, pods []*v1.Pod, rtype v1a
 		// TODO:
 	}
 
-	// sync status with pods
-	activePods := controller.FilterActivePods(pods)
-	active := int32(len(activePods))
 	succeeded, failed := getStatus(pods)
-	st := v1alpha1.MXReplicaStatus{Active: active, Succeeded: succeeded, Failed: failed, Gone: status.Gone}
+	st := v1alpha1.MXReplicaStatus{Active: active, Succeeded: succeeded, Failed: failed, Gone: gone}
 	loggerForReplica(mxjob, rtype).Infof("sync status %+v", st)
 	updateMXReplicaStatuses(mxjob, rtype, &st)
 
@@ -414,6 +427,7 @@ func (h *Handler) terminateMXJob(mxjob *v1alpha1.MXJob, pods []*v1.Pod) error {
 	errCh := make(chan error, num)
 	loggerForMXJob(mxjob).Infof("deleting %d active pod", num)
 
+	var statusLock sync.Mutex
 	for _, p := range activePods {
 		go func(pod *v1.Pod) {
 			defer wait.Done()
@@ -422,6 +436,21 @@ func (h *Handler) terminateMXJob(mxjob *v1alpha1.MXJob, pods []*v1.Pod) error {
 				loggerForMXJob(mxjob).Infof("failed to delete pod: %s/%s", pod.Namespace, pod.Name)
 				errCh <- err
 			}
+
+			// update replica status
+			statusLock.Lock()
+			switch v1alpha1.MXReplicaType(pod.Labels[mxLabelReplicaType]) {
+			case v1alpha1.MXReplicaTypeScheduler:
+				mxjob.Status.ReplicaStatuses.Scheduler.Gone++
+				mxjob.Status.ReplicaStatuses.Scheduler.Active--
+			case v1alpha1.MXReplicaTypeServer:
+				mxjob.Status.ReplicaStatuses.Server.Gone++
+				mxjob.Status.ReplicaStatuses.Server.Active--
+			case v1alpha1.MXReplicaTypeWorker:
+				mxjob.Status.ReplicaStatuses.Worker.Gone++
+				mxjob.Status.ReplicaStatuses.Worker.Active--
+			}
+			statusLock.Unlock()
 		}(p)
 	}
 	wait.Wait()
@@ -472,13 +501,13 @@ func (h *Handler) createNewPod(mxjob *v1alpha1.MXJob, rt v1alpha1.MXReplicaType,
 }
 
 // updateMXJobStatus updates the status of the mxjob.
-func (h *Handler) updateMXJobStatus(mxjob *v1alpha1.MXJob, rtype v1alpha1.MXReplicaType, replicas int) error {
+func (h *Handler) updateMXJobStatus(mxjob *v1alpha1.MXJob, rtype v1alpha1.MXReplicaType, replicas int32) error {
 	// Expect to have `replicas - succeeded` pods alive.
 	status := getMXReplicaStatus(mxjob, rtype)
-	expected := replicas - int(status.Succeeded)
-	running := int(status.Active)
-	failed := int(status.Failed)
-	gone := int(status.Gone)
+	expected := replicas - status.Succeeded
+	running := status.Active
+	failed := status.Failed
+	gone := status.Gone
 
 	if rtype == v1alpha1.MXReplicaTypeWorker {
 		// All workers are running, set StartTime.
@@ -504,8 +533,11 @@ func (h *Handler) updateMXJobStatus(mxjob *v1alpha1.MXJob, rtype v1alpha1.MXRepl
 
 	// Some workers, servers or schedulers are failed or gone, leave a failed condition.
 	if failed > 0 || gone > 0 {
-		msg := fmt.Sprintf("MXJob %s is failed.", mxjob.Name)
-		h.updateMXJobConditions(mxjob, v1alpha1.MXJobFailed, v1alpha1.MXJobReasonFailed, msg)
+		// ignore if already succeeded
+		if !checkCondition(mxjob.Status, v1alpha1.MXJobSucceeded) {
+			msg := fmt.Sprintf("MXJob %s is failed.", mxjob.Name)
+			h.updateMXJobConditions(mxjob, v1alpha1.MXJobFailed, v1alpha1.MXJobReasonFailed, msg)
+		}
 	}
 	return nil
 }
