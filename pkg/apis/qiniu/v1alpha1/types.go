@@ -74,15 +74,14 @@ type MXReplicaStatuses struct {
 
 type MXReplicaSpec struct {
 	// Replicas is the number of desired replicas.
-	// This is a pointer to distinguish between explicit zero and unspecified.
-	// Defaults to 1.
-	// More info: http://kubernetes.io/docs/user-guide/replication-controller#what-is-a-replication-controller
-	// +optional
-	Replicas *int32              `json:"replicas,omitempty" protobuf:"varint,1,opt,name=replicas"`
-	Template *v1.PodTemplateSpec `json:"template,omitempty" protobuf:"bytes,3,opt,name=template"`
+	Replicas *int32              `json:"replicas,omitempty"`
+	Template *v1.PodTemplateSpec `json:"template,omitempty"`
 
 	// PsRootPort is the port to use for scheduler.
-	PsRootPort *int32 `json:"psRootPort,omitempty" protobuf:"varint,1,opt,name=psRootPort"`
+	PsRootPort *int32 `json:"psRootPort,omitempty"`
+
+	// PsVerbose is the communication loggining level.
+	PsVerbose *int32 `json:"psVerbose,omitempty"`
 }
 
 // MXReplicaStatus mxnet replica status

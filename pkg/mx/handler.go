@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -31,7 +32,8 @@ const (
 )
 
 var (
-	controllerName = "mxnet-operator"
+	controllerName          = "mxnet-operator"
+	defaultPsRootPort int32 = 9091
 
 	// KeyFunc is the short name to DeletionHandlingMetaNamespaceKeyFunc.
 	// IndexerInformer uses a delta queue, therefore for deletes we have to use this
@@ -385,13 +387,18 @@ func (h *Handler) reconcileServices(mxjob *v1alpha1.MXJob, services []*v1.Servic
 		// create only one service for scheduler
 		loggerForReplica(mxjob, rtype).Infof("creating new service: %s", rtype)
 		labels := genLabels(mxjob, v1alpha1.MXReplicaTypeScheduler)
+
+		port := spec.PsRootPort
+		if port == nil {
+			port = &defaultPsRootPort
+		}
 		service := &v1.Service{
 			Spec: v1.ServiceSpec{
 				Selector: labels,
 				Ports: []v1.ServicePort{
 					{
 						Name: serviceName(mxjob, rtype),
-						Port: *spec.PsRootPort,
+						Port: *port,
 					},
 				},
 			},
@@ -754,11 +761,33 @@ func genExpectationPodsKey(mxjobKey string, replicaType v1alpha1.MXReplicaType) 
 
 func genMXConfigEnv(mxjob *v1alpha1.MXJob, rtype v1alpha1.MXReplicaType) (ret map[string]string) {
 	ret = make(map[string]string)
-	// TODO:
+	ret["DMLC_PS_ROOT_URI"] = serviceName(mxjob, v1alpha1.MXReplicaTypeScheduler)
+	port := mxjob.Spec.MXReplicaSpecs.Scheduler.PsRootPort
+	if port == nil {
+		port = &defaultPsRootPort
+	}
+	ret["DMLC_PS_ROOT_PORT"] = strconv.FormatInt(int64(*port), 10)
+	ret["DMLC_NUM_SERVER"] = strconv.FormatInt(int64(*mxjob.Spec.MXReplicaSpecs.Server.Replicas), 10)
+	ret["DMLC_NUM_WORKER"] = strconv.FormatInt(int64(*mxjob.Spec.MXReplicaSpecs.Worker.Replicas), 10)
 	switch rtype {
 	case v1alpha1.MXReplicaTypeScheduler:
+		ret["DMLC_ROLE"] = string(v1alpha1.MXReplicaTypeScheduler)
+		psVerbose := mxjob.Spec.MXReplicaSpecs.Scheduler.PsVerbose
+		if psVerbose != nil {
+			ret["PS_VERBOSE"] = strconv.FormatInt(int64(*psVerbose), 10)
+		}
 	case v1alpha1.MXReplicaTypeServer:
+		ret["DMLC_ROLE"] = string(v1alpha1.MXReplicaTypeServer)
+		psVerbose := mxjob.Spec.MXReplicaSpecs.Server.PsVerbose
+		if psVerbose != nil {
+			ret["PS_VERBOSE"] = strconv.FormatInt(int64(*psVerbose), 10)
+		}
 	case v1alpha1.MXReplicaTypeWorker:
+		ret["DMLC_ROLE"] = string(v1alpha1.MXReplicaTypeWorker)
+		psVerbose := mxjob.Spec.MXReplicaSpecs.Worker.PsVerbose
+		if psVerbose != nil {
+			ret["PS_VERBOSE"] = strconv.FormatInt(int64(*psVerbose), 10)
+		}
 	}
 	return
 }

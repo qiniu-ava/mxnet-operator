@@ -180,6 +180,15 @@ func (in *MXReplicaSpec) DeepCopyInto(out *MXReplicaSpec) {
 			**out = **in
 		}
 	}
+	if in.PsVerbose != nil {
+		in, out := &in.PsVerbose, &out.PsVerbose
+		if *in == nil {
+			*out = nil
+		} else {
+			*out = new(int32)
+			**out = **in
+		}
+	}
 	return
 }
 
