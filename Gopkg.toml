@@ -23,3 +23,7 @@
 [[override]]
   name = "github.com/docker/distribution"
   branch = "master"
+
+[[constraint]]
+  branch = "master"
+  name = "github.com/ant31/crd-validation"
