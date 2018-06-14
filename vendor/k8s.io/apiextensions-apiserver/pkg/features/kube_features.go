@@ -33,13 +33,6 @@ const (
 	//
 	// CustomResourceValidation is a list of validation methods for CustomResources
 	CustomResourceValidation utilfeature.Feature = "CustomResourceValidation"
-
-	// owner: @sttts, @nikhita
-	// alpha: v1.10
-	// beta: v1.11
-	//
-	// CustomResourceSubresources defines the subresources for CustomResources
-	CustomResourceSubresources utilfeature.Feature = "CustomResourceSubresources"
 )
 
 func init() {
@@ -50,6 +43,5 @@ func init() {
 // To add a new feature, define a key for it above and add it here. The features will be
 // available throughout Kubernetes binaries.
 var defaultKubernetesFeatureGates = map[utilfeature.Feature]utilfeature.FeatureSpec{
-	CustomResourceValidation:   {Default: true, PreRelease: utilfeature.Beta},
-	CustomResourceSubresources: {Default: true, PreRelease: utilfeature.Beta},
+	CustomResourceValidation: {Default: true, PreRelease: utilfeature.Beta},
 }

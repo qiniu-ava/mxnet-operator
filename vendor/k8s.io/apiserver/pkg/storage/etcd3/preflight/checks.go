@@ -18,13 +18,18 @@ package preflight
 
 import (
 	"fmt"
-	"math/rand"
 	"net"
 	"net/url"
 	"time"
 )
 
 const connectionTimeout = 1 * time.Second
+
+type connection interface {
+	serverReachable(address string) bool
+	parseServerList(serverList []string) error
+	CheckEtcdServers() (bool, error)
+}
 
 // EtcdConnection holds the Etcd server list
 type EtcdConnection struct {
@@ -54,11 +59,9 @@ func parseServerURI(serverURI string) (*url.URL, error) {
 // CheckEtcdServers will attempt to reach all etcd servers once. If any
 // can be reached, return true.
 func (con EtcdConnection) CheckEtcdServers() (done bool, err error) {
-	// Attempt to reach every Etcd server randomly.
-	serverNumber := len(con.ServerList)
-	serverPerms := rand.Perm(serverNumber)
-	for _, index := range serverPerms {
-		host, err := parseServerURI(con.ServerList[index])
+	// Attempt to reach every Etcd server in order
+	for _, serverURI := range con.ServerList {
+		host, err := parseServerURI(serverURI)
 		if err != nil {
 			return false, err
 		}

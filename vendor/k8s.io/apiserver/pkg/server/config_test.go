@@ -26,6 +26,7 @@ import (
 	"testing"
 
 	"k8s.io/apimachinery/pkg/util/sets"
+	genericapirequest "k8s.io/apiserver/pkg/endpoints/request"
 	"k8s.io/apiserver/pkg/server/healthz"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes/fake"
@@ -35,6 +36,7 @@ import (
 func TestNewWithDelegate(t *testing.T) {
 	delegateConfig := NewConfig(codecs)
 	delegateConfig.PublicAddress = net.ParseIP("192.168.10.4")
+	delegateConfig.RequestContextMapper = genericapirequest.NewRequestContextMapper()
 	delegateConfig.LegacyAPIGroupPrefixes = sets.NewString("/api")
 	delegateConfig.LoopbackClientConfig = &rest.Config{}
 	delegateConfig.SwaggerConfig = DefaultSwaggerConfig()
@@ -43,12 +45,14 @@ func TestNewWithDelegate(t *testing.T) {
 		t.Fatal("unable to create fake client set")
 	}
 
+	delegateHealthzCalled := false
 	delegateConfig.HealthzChecks = append(delegateConfig.HealthzChecks, healthz.NamedCheck("delegate-health", func(r *http.Request) error {
+		delegateHealthzCalled = true
 		return fmt.Errorf("delegate failed healthcheck")
 	}))
 
 	sharedInformers := informers.NewSharedInformerFactory(clientset, delegateConfig.LoopbackClientConfig.Timeout)
-	delegateServer, err := delegateConfig.Complete(sharedInformers).New("test", NewEmptyDelegate())
+	delegateServer, err := delegateConfig.Complete(sharedInformers).New("test", EmptyDelegate)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -65,11 +69,14 @@ func TestNewWithDelegate(t *testing.T) {
 
 	wrappingConfig := NewConfig(codecs)
 	wrappingConfig.PublicAddress = net.ParseIP("192.168.10.4")
+	wrappingConfig.RequestContextMapper = genericapirequest.NewRequestContextMapper()
 	wrappingConfig.LegacyAPIGroupPrefixes = sets.NewString("/api")
 	wrappingConfig.LoopbackClientConfig = &rest.Config{}
 	wrappingConfig.SwaggerConfig = DefaultSwaggerConfig()
 
+	wrappingHealthzCalled := false
 	wrappingConfig.HealthzChecks = append(wrappingConfig.HealthzChecks, healthz.NamedCheck("wrapping-health", func(r *http.Request) error {
+		wrappingHealthzCalled = true
 		return fmt.Errorf("wrapping failed healthcheck")
 	}))
 
@@ -106,7 +113,6 @@ func TestNewWithDelegate(t *testing.T) {
     "/healthz/poststarthook/generic-apiserver-start-informers",
     "/healthz/poststarthook/wrapping-post-start-hook",
     "/healthz/wrapping-health",
-    "/metrics",
     "/swaggerapi"
   ]
 }`, t)

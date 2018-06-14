@@ -69,10 +69,10 @@ func newTransportForETCD2(certFile, keyFile, caFile string) (*http.Transport, er
 	// TODO: Determine if transport needs optimization
 	tr := utilnet.SetTransportDefaults(&http.Transport{
 		Proxy: http.ProxyFromEnvironment,
-		DialContext: (&net.Dialer{
+		Dial: (&net.Dialer{
 			Timeout:   30 * time.Second,
 			KeepAlive: 30 * time.Second,
-		}).DialContext,
+		}).Dial,
 		TLSHandshakeTimeout: 10 * time.Second,
 		MaxIdleConnsPerHost: 500,
 		TLSClientConfig:     cfg,

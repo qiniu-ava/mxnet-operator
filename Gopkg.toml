@@ -17,6 +17,14 @@
   # version = "=v0.0.5"
 
 [[override]]
+  name = "k8s.io/apiextensions-apiserver"
+  version = "kubernetes-1.9.3"
+
+[[override]]
+  name = "k8s.io/apiserver"
+  version = "kubernetes-1.9.3"
+
+[[override]]
   name = "k8s.io/kubernetes"
   version = "=1.9.3"
 

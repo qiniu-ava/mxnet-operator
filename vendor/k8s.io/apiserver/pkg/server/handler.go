@@ -18,6 +18,7 @@ package server
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"net/http"
 	rt "runtime"
@@ -31,7 +32,9 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apiserver/pkg/endpoints/handlers/responsewriters"
+	"k8s.io/apiserver/pkg/endpoints/request"
 	"k8s.io/apiserver/pkg/server/mux"
+	genericmux "k8s.io/apiserver/pkg/server/mux"
 )
 
 // APIServerHandlers holds the different http.Handlers used by the API server.
@@ -70,8 +73,8 @@ type APIServerHandler struct {
 // It is normally used to apply filtering like authentication and authorization
 type HandlerChainBuilderFn func(apiHandler http.Handler) http.Handler
 
-func NewAPIServerHandler(name string, s runtime.NegotiatedSerializer, handlerChainBuilder HandlerChainBuilderFn, notFoundHandler http.Handler) *APIServerHandler {
-	nonGoRestfulMux := mux.NewPathRecorderMux(name)
+func NewAPIServerHandler(name string, contextMapper request.RequestContextMapper, s runtime.NegotiatedSerializer, handlerChainBuilder HandlerChainBuilderFn, notFoundHandler http.Handler) *APIServerHandler {
+	nonGoRestfulMux := genericmux.NewPathRecorderMux(name)
 	if notFoundHandler != nil {
 		nonGoRestfulMux.NotFoundHandler(notFoundHandler)
 	}
@@ -83,7 +86,11 @@ func NewAPIServerHandler(name string, s runtime.NegotiatedSerializer, handlerCha
 		logStackOnRecover(s, panicReason, httpWriter)
 	})
 	gorestfulContainer.ServiceErrorHandler(func(serviceErr restful.ServiceError, request *restful.Request, response *restful.Response) {
-		serviceErrorHandler(s, serviceErr, request, response)
+		ctx, ok := contextMapper.Get(request.Request)
+		if !ok {
+			responsewriters.InternalError(response.ResponseWriter, request.Request, errors.New("no context found for request"))
+		}
+		serviceErrorHandler(ctx, s, serviceErr, request, response)
 	})
 
 	director := director{
@@ -171,11 +178,13 @@ func logStackOnRecover(s runtime.NegotiatedSerializer, panicReason interface{}, 
 	if ct := w.Header().Get("Content-Type"); len(ct) > 0 {
 		headers.Set("Accept", ct)
 	}
-	responsewriters.ErrorNegotiated(apierrors.NewGenericServerResponse(http.StatusInternalServerError, "", schema.GroupResource{}, "", "", 0, false), s, schema.GroupVersion{}, w, &http.Request{Header: headers})
+	emptyContext := request.NewContext() // best we can do here: we don't know the request
+	responsewriters.ErrorNegotiated(emptyContext, apierrors.NewGenericServerResponse(http.StatusInternalServerError, "", schema.GroupResource{}, "", "", 0, false), s, schema.GroupVersion{}, w, &http.Request{Header: headers})
 }
 
-func serviceErrorHandler(s runtime.NegotiatedSerializer, serviceErr restful.ServiceError, request *restful.Request, resp *restful.Response) {
+func serviceErrorHandler(ctx request.Context, s runtime.NegotiatedSerializer, serviceErr restful.ServiceError, request *restful.Request, resp *restful.Response) {
 	responsewriters.ErrorNegotiated(
+		ctx,
 		apierrors.NewGenericServerResponse(serviceErr.Code, "", schema.GroupResource{}, "", serviceErr.Message, 0, false),
 		s,
 		schema.GroupVersion{},

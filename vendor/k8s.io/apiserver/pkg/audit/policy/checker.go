@@ -76,18 +76,14 @@ func (p *policyChecker) LevelAndStages(attrs authorizer.Attributes) (audit.Level
 
 // Check whether the rule matches the request attrs.
 func ruleMatches(r *audit.PolicyRule, attrs authorizer.Attributes) bool {
-	user := attrs.GetUser()
-	if len(r.Users) > 0 {
-		if user == nil || !hasString(r.Users, user.GetName()) {
+	if len(r.Users) > 0 && attrs.GetUser() != nil {
+		if !hasString(r.Users, attrs.GetUser().GetName()) {
 			return false
 		}
 	}
-	if len(r.UserGroups) > 0 {
-		if user == nil {
-			return false
-		}
+	if len(r.UserGroups) > 0 && attrs.GetUser() != nil {
 		matched := false
-		for _, group := range user.GetGroups() {
+		for _, group := range attrs.GetUser().GetGroups() {
 			if hasString(r.UserGroups, group) {
 				matched = true
 				break
@@ -164,11 +160,11 @@ func ruleMatchesResource(r *audit.PolicyRule, attrs authorizer.Attributes) bool 
 
 	apiGroup := attrs.GetAPIGroup()
 	resource := attrs.GetResource()
-	subresource := attrs.GetSubresource()
-	combinedResource := resource
 	// If subresource, the resource in the policy must match "(resource)/(subresource)"
-	if subresource != "" {
-		combinedResource = resource + "/" + subresource
+	//
+	// TODO: consider adding options like "pods/*" to match all subresources.
+	if sr := attrs.GetSubresource(); sr != "" {
+		resource = resource + "/" + sr
 	}
 
 	name := attrs.GetName()
@@ -179,17 +175,8 @@ func ruleMatchesResource(r *audit.PolicyRule, attrs authorizer.Attributes) bool 
 				return true
 			}
 			for _, res := range gr.Resources {
-				if len(gr.ResourceNames) == 0 || hasString(gr.ResourceNames, name) {
-					// match "*"
-					if res == combinedResource || res == "*" {
-						return true
-					}
-					// match "*/subresource"
-					if len(subresource) > 0 && strings.HasPrefix(res, "*/") && subresource == strings.TrimLeft(res, "*/") {
-						return true
-					}
-					// match "resource/*"
-					if strings.HasSuffix(res, "/*") && resource == strings.TrimRight(res, "/*") {
+				if res == resource {
+					if len(gr.ResourceNames) == 0 || hasString(gr.ResourceNames, name) {
 						return true
 					}
 				}

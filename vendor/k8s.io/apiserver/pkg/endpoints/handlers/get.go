@@ -17,7 +17,6 @@ limitations under the License.
 package handlers
 
 import (
-	"context"
 	"fmt"
 	"math/rand"
 	"net/http"
@@ -41,7 +40,7 @@ import (
 
 // getterFunc performs a get request with the given context and object name. The request
 // may be used to deserialize an options object to pass to the getter.
-type getterFunc func(ctx context.Context, name string, req *http.Request, trace *utiltrace.Trace) (runtime.Object, error)
+type getterFunc func(ctx request.Context, name string, req *http.Request, trace *utiltrace.Trace) (runtime.Object, error)
 
 // getResourceHandler is an HTTP handler function for get requests. It delegates to the
 // passed-in getterFunc to perform the actual get.
@@ -55,7 +54,7 @@ func getResourceHandler(scope RequestScope, getter getterFunc) http.HandlerFunc 
 			scope.err(err, w, req)
 			return
 		}
-		ctx := req.Context()
+		ctx := scope.ContextFunc(req)
 		ctx = request.WithNamespace(ctx, namespace)
 
 		result, err := getter(ctx, name, req, trace)
@@ -81,7 +80,7 @@ func getResourceHandler(scope RequestScope, getter getterFunc) http.HandlerFunc 
 // GetResource returns a function that handles retrieving a single resource from a rest.Storage object.
 func GetResource(r rest.Getter, e rest.Exporter, scope RequestScope) http.HandlerFunc {
 	return getResourceHandler(scope,
-		func(ctx context.Context, name string, req *http.Request, trace *utiltrace.Trace) (runtime.Object, error) {
+		func(ctx request.Context, name string, req *http.Request, trace *utiltrace.Trace) (runtime.Object, error) {
 			// check for export
 			options := metav1.GetOptions{}
 			if values := req.URL.Query(); len(values) > 0 {
@@ -111,7 +110,7 @@ func GetResource(r rest.Getter, e rest.Exporter, scope RequestScope) http.Handle
 // GetResourceWithOptions returns a function that handles retrieving a single resource from a rest.Storage object.
 func GetResourceWithOptions(r rest.GetterWithOptions, scope RequestScope, isSubresource bool) http.HandlerFunc {
 	return getResourceHandler(scope,
-		func(ctx context.Context, name string, req *http.Request, trace *utiltrace.Trace) (runtime.Object, error) {
+		func(ctx request.Context, name string, req *http.Request, trace *utiltrace.Trace) (runtime.Object, error) {
 			opts, subpath, subpathKey := r.NewGetOptions()
 			trace.Step("About to process Get options")
 			if err := getRequestOptions(req, scope, opts, subpath, subpathKey, isSubresource); err != nil {
@@ -138,7 +137,7 @@ func getRequestOptions(req *http.Request, scope RequestScope, into runtime.Objec
 			newQuery[k] = v
 		}
 
-		ctx := req.Context()
+		ctx := scope.ContextFunc(req)
 		requestInfo, _ := request.RequestInfoFrom(ctx)
 		startingIndex := 2
 		if isSubresource {
@@ -182,7 +181,7 @@ func ListResource(r rest.Lister, rw rest.Watcher, scope RequestScope, forceWatch
 			hasName = false
 		}
 
-		ctx := req.Context()
+		ctx := scope.ContextFunc(req)
 		ctx = request.WithNamespace(ctx, namespace)
 
 		opts := metainternalversion.ListOptions{}
@@ -208,25 +207,19 @@ func ListResource(r rest.Lister, rw rest.Watcher, scope RequestScope, forceWatch
 
 		if hasName {
 			// metadata.name is the canonical internal name.
-			// SelectionPredicate will notice that this is a request for
-			// a single object and optimize the storage query accordingly.
+			// SelectionPredicate will notice that this is
+			// a request for a single object and optimize the
+			// storage query accordingly.
 			nameSelector := fields.OneTermEqualSelector("metadata.name", name)
-
-			// Note that fieldSelector setting explicitly the "metadata.name"
-			// will result in reaching this branch (as the value of that field
-			// is propagated to requestInfo as the name parameter.
-			// That said, the allowed field selectors in this branch are:
-			// nil, fields.Everything and field selector matching metadata.name
-			// for our name.
 			if opts.FieldSelector != nil && !opts.FieldSelector.Empty() {
-				selectedName, ok := opts.FieldSelector.RequiresExactMatch("metadata.name")
-				if !ok || name != selectedName {
-					scope.err(errors.NewBadRequest("fieldSelector metadata.name doesn't match requested name"), w, req)
-					return
-				}
-			} else {
-				opts.FieldSelector = nameSelector
+				// It doesn't make sense to ask for both a name
+				// and a field selector, since just the name is
+				// sufficient to narrow down the request to a
+				// single object.
+				scope.err(errors.NewBadRequest("both a name and a field selector provided; please provide one or the other."), w, req)
+				return
 			}
+			opts.FieldSelector = nameSelector
 		}
 
 		if opts.Watch || forceWatch {

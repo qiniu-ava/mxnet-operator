@@ -32,7 +32,6 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -42,11 +41,13 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
 	"k8s.io/apimachinery/pkg/version"
+	genericapirequest "k8s.io/apiserver/pkg/endpoints/request"
 	"k8s.io/apiserver/pkg/server"
 	. "k8s.io/apiserver/pkg/server"
 	utilflag "k8s.io/apiserver/pkg/util/flag"
 	"k8s.io/client-go/discovery"
 	restclient "k8s.io/client-go/rest"
+	"strconv"
 )
 
 func setUp(t *testing.T) Config {
@@ -54,6 +55,7 @@ func setUp(t *testing.T) Config {
 	codecs := serializer.NewCodecFactory(scheme)
 
 	config := NewConfig(codecs)
+	config.RequestContextMapper = genericapirequest.NewRequestContextMapper()
 
 	return *config
 }
@@ -469,7 +471,7 @@ NextTest:
 			config.Version = &v
 
 			config.EnableIndex = true
-			secureOptions := WithLoopback(&SecureServingOptions{
+			secureOptions := &SecureServingOptions{
 				BindAddress: net.ParseIP("127.0.0.1"),
 				BindPort:    6443,
 				ServerCert: GeneratableKeyCert{
@@ -479,7 +481,7 @@ NextTest:
 					},
 				},
 				SNICertKeys: namedCertKeys,
-			})
+			}
 			// use a random free port
 			ln, err := net.Listen("tcp", "127.0.0.1:0")
 			if err != nil {
@@ -495,7 +497,7 @@ NextTest:
 				return
 			}
 
-			s, err := config.Complete(nil).New("test", server.NewEmptyDelegate())
+			s, err := config.Complete(nil).New("test", server.EmptyDelegate)
 			if err != nil {
 				t.Errorf("%q - failed creating the server: %v", title, err)
 				return

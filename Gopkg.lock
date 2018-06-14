@@ -336,14 +336,14 @@
   version = "kubernetes-1.9.3"
 
 [[projects]]
-  branch = "master"
   name = "k8s.io/apiextensions-apiserver"
   packages = [
     "pkg/apis/apiextensions",
     "pkg/apis/apiextensions/v1beta1",
     "pkg/features"
   ]
-  revision = "bd76ce7dd8e65e8c2197803a1e64869ca5905309"
+  revision = "f1425805c0335c1f5b23e70f0154747b3df5a16a"
+  version = "kubernetes-1.9.3"
 
 [[projects]]
   name = "k8s.io/apimachinery"
@@ -400,7 +400,6 @@
   version = "kubernetes-1.9.3"
 
 [[projects]]
-  branch = "master"
   name = "k8s.io/apiserver"
   packages = [
     "pkg/authentication/authenticator",
@@ -409,7 +408,8 @@
     "pkg/features",
     "pkg/util/feature"
   ]
-  revision = "26d8520c41c195deccdd8632a350c1cdaff01c0c"
+  revision = "40b00dd493d8fb98c255f0c6427f97fbf865a538"
+  version = "kubernetes-1.9.3"
 
 [[projects]]
   name = "k8s.io/client-go"
@@ -517,6 +517,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "bd053efbc925446040cb4fa5d0e6ceb1673986461bf63eff985fafa63fffae78"
+  inputs-digest = "932a148a33a8da62c8faa0f8af6bcb12225c4216a402ba9307590aae29f8ec8b"
   solver-name = "gps-cdcl"
   solver-version = 1

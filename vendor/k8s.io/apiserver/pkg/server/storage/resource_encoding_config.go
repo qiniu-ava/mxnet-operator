@@ -17,8 +17,7 @@ limitations under the License.
 package storage
 
 import (
-	"fmt"
-
+	"k8s.io/apimachinery/pkg/apimachinery/registered"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
@@ -34,8 +33,8 @@ type ResourceEncodingConfig interface {
 }
 
 type DefaultResourceEncodingConfig struct {
-	groups map[string]*GroupResourceEncodingConfig
-	scheme *runtime.Scheme
+	groups   map[string]*GroupResourceEncodingConfig
+	registry *registered.APIRegistrationManager
 }
 
 type GroupResourceEncodingConfig struct {
@@ -48,8 +47,8 @@ type GroupResourceEncodingConfig struct {
 
 var _ ResourceEncodingConfig = &DefaultResourceEncodingConfig{}
 
-func NewDefaultResourceEncodingConfig(scheme *runtime.Scheme) *DefaultResourceEncodingConfig {
-	return &DefaultResourceEncodingConfig{groups: map[string]*GroupResourceEncodingConfig{}, scheme: scheme}
+func NewDefaultResourceEncodingConfig(registry *registered.APIRegistrationManager) *DefaultResourceEncodingConfig {
+	return &DefaultResourceEncodingConfig{groups: map[string]*GroupResourceEncodingConfig{}, registry: registry}
 }
 
 func newGroupResourceEncodingConfig(defaultEncoding, defaultInternalVersion schema.GroupVersion) *GroupResourceEncodingConfig {
@@ -81,15 +80,16 @@ func (o *DefaultResourceEncodingConfig) SetResourceEncoding(resourceBeingStored 
 }
 
 func (o *DefaultResourceEncodingConfig) StorageEncodingFor(resource schema.GroupResource) (schema.GroupVersion, error) {
-	if !o.scheme.IsGroupRegistered(resource.Group) {
-		return schema.GroupVersion{}, fmt.Errorf("group %q is not registered in scheme", resource.Group)
+	groupMeta, err := o.registry.Group(resource.Group)
+	if err != nil {
+		return schema.GroupVersion{}, err
 	}
 
 	groupEncoding, groupExists := o.groups[resource.Group]
 
 	if !groupExists {
 		// return the most preferred external version for the group
-		return o.scheme.PrioritizedVersionsForGroup(resource.Group)[0], nil
+		return groupMeta.GroupVersion, nil
 	}
 
 	resourceOverride, resourceExists := groupEncoding.ExternalResourceEncodings[resource.Resource]
@@ -101,8 +101,8 @@ func (o *DefaultResourceEncodingConfig) StorageEncodingFor(resource schema.Group
 }
 
 func (o *DefaultResourceEncodingConfig) InMemoryEncodingFor(resource schema.GroupResource) (schema.GroupVersion, error) {
-	if !o.scheme.IsGroupRegistered(resource.Group) {
-		return schema.GroupVersion{}, fmt.Errorf("group %q is not registered in scheme", resource.Group)
+	if _, err := o.registry.Group(resource.Group); err != nil {
+		return schema.GroupVersion{}, err
 	}
 
 	groupEncoding, groupExists := o.groups[resource.Group]

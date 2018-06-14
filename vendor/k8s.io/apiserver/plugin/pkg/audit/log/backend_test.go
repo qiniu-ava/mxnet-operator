@@ -18,6 +18,7 @@ package log
 
 import (
 	"bytes"
+	"fmt"
 	"reflect"
 	"regexp"
 	"testing"
@@ -25,8 +26,11 @@ import (
 
 	"github.com/pborman/uuid"
 
+	"k8s.io/apimachinery/pkg/apimachinery/announced"
+	"k8s.io/apimachinery/pkg/apimachinery/registered"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	auditinternal "k8s.io/apiserver/pkg/apis/audit"
 	"k8s.io/apiserver/pkg/apis/audit/install"
@@ -34,8 +38,19 @@ import (
 	"k8s.io/apiserver/pkg/audit"
 )
 
+// NOTE: Copied from webhook backend to register auditv1beta1 to scheme
+var (
+	groupFactoryRegistry = make(announced.APIGroupFactoryRegistry)
+	registry             = registered.NewOrDie("")
+)
+
 func init() {
-	install.Install(audit.Scheme)
+	allGVs := []schema.GroupVersion{auditv1beta1.SchemeGroupVersion}
+	registry.RegisterVersions(allGVs)
+	if err := registry.EnableVersions(allGVs...); err != nil {
+		panic(fmt.Sprintf("failed to enable version %v", allGVs))
+	}
+	install.Install(groupFactoryRegistry, registry, audit.Scheme)
 }
 
 func TestLogEventsLegacy(t *testing.T) {

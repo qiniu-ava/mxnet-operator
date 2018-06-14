@@ -37,7 +37,7 @@ import (
 )
 
 // WithImpersonation is a filter that will inspect and check requests that attempt to change the user.Info for their requests
-func WithImpersonation(handler http.Handler, a authorizer.Authorizer, s runtime.NegotiatedSerializer) http.Handler {
+func WithImpersonation(handler http.Handler, requestContextMapper request.RequestContextMapper, a authorizer.Authorizer, s runtime.NegotiatedSerializer) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		impersonationRequests, err := buildImpersonationRequests(req.Header)
 		if err != nil {
@@ -50,7 +50,11 @@ func WithImpersonation(handler http.Handler, a authorizer.Authorizer, s runtime.
 			return
 		}
 
-		ctx := req.Context()
+		ctx, exists := requestContextMapper.Get(req)
+		if !exists {
+			responsewriters.InternalError(w, req, errors.New("no context found for request"))
+			return
+		}
 		requestor, exists := request.UserFrom(ctx)
 		if !exists {
 			responsewriters.InternalError(w, req, errors.New("no user found for request"))
@@ -125,7 +129,7 @@ func WithImpersonation(handler http.Handler, a authorizer.Authorizer, s runtime.
 			Groups: groups,
 			Extra:  userExtra,
 		}
-		req = req.WithContext(request.WithUser(ctx, newUser))
+		requestContextMapper.Update(req, request.WithUser(ctx, newUser))
 
 		oldUser, _ := request.UserFrom(ctx)
 		httplog.LogOf(req, w).Addf("%v is acting as %v", oldUser, newUser)
