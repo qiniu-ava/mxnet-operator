@@ -17,9 +17,12 @@ limitations under the License.
 package storage
 
 import (
+	"os"
 	"reflect"
 	"testing"
 
+	"k8s.io/apimachinery/pkg/apimachinery/announced"
+	"k8s.io/apimachinery/pkg/apimachinery/registered"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -33,6 +36,8 @@ import (
 var (
 	v1GroupVersion = schema.GroupVersion{Group: "", Version: "v1"}
 
+	registry       = registered.NewOrDie(os.Getenv("KUBE_API_VERSIONS"))
+	announce       = make(announced.APIGroupFactoryRegistry)
 	scheme         = runtime.NewScheme()
 	codecs         = serializer.NewCodecFactory(scheme)
 	parameterCodec = runtime.NewParameterCodec(scheme)
@@ -48,7 +53,7 @@ func init() {
 		&metav1.APIResourceList{},
 	)
 
-	exampleinstall.Install(scheme)
+	exampleinstall.Install(announce, registry, scheme)
 }
 
 type fakeNegotiater struct {
@@ -89,7 +94,7 @@ func (n *fakeNegotiater) DecoderToVersion(serializer runtime.Decoder, gv runtime
 
 func TestConfigurableStorageFactory(t *testing.T) {
 	ns := &fakeNegotiater{types: []string{"test/test"}}
-	f := NewDefaultStorageFactory(storagebackend.Config{}, "test/test", ns, NewDefaultResourceEncodingConfig(scheme), NewResourceConfig(), nil)
+	f := NewDefaultStorageFactory(storagebackend.Config{}, "test/test", ns, NewDefaultResourceEncodingConfig(registry), NewResourceConfig(), nil)
 	f.AddCohabitatingResources(example.Resource("test"), schema.GroupResource{Resource: "test2", Group: "2"})
 	called := false
 	testEncoderChain := func(e runtime.Encoder) runtime.Encoder {
@@ -113,7 +118,9 @@ func TestConfigurableStorageFactory(t *testing.T) {
 }
 
 func TestUpdateEtcdOverrides(t *testing.T) {
-	exampleinstall.Install(scheme)
+	registry := registered.NewOrDie(os.Getenv("KUBE_API_VERSIONS"))
+	announced := make(announced.APIGroupFactoryRegistry)
+	exampleinstall.Install(announced, registry, scheme)
 
 	testCases := []struct {
 		resource schema.GroupResource
@@ -139,7 +146,7 @@ func TestUpdateEtcdOverrides(t *testing.T) {
 			Prefix:     "/registry",
 			ServerList: defaultEtcdLocation,
 		}
-		storageFactory := NewDefaultStorageFactory(defaultConfig, "", codecs, NewDefaultResourceEncodingConfig(scheme), NewResourceConfig(), nil)
+		storageFactory := NewDefaultStorageFactory(defaultConfig, "", codecs, NewDefaultResourceEncodingConfig(registry), NewResourceConfig(), nil)
 		storageFactory.SetEtcdLocation(test.resource, test.servers)
 
 		var err error

@@ -17,7 +17,6 @@ limitations under the License.
 package filters
 
 import (
-	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -309,12 +308,13 @@ func TestImpersonationFilter(t *testing.T) {
 		},
 	}
 
-	var ctx context.Context
+	requestContextMapper := request.NewRequestContextMapper()
+	var ctx request.Context
 	var actualUser user.Info
 	var lock sync.Mutex
 
 	doNothingHandler := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		currentCtx := req.Context()
+		currentCtx, _ := requestContextMapper.Get(req)
 		user, exists := request.UserFrom(currentCtx)
 		if !exists {
 			actualUser = nil
@@ -345,8 +345,8 @@ func TestImpersonationFilter(t *testing.T) {
 			}()
 			lock.Lock()
 			defer lock.Unlock()
-			req = req.WithContext(ctx)
-			currentCtx := req.Context()
+			requestContextMapper.Update(req, ctx)
+			currentCtx, _ := requestContextMapper.Get(req)
 
 			user, exists := request.UserFrom(currentCtx)
 			if !exists {
@@ -358,7 +358,8 @@ func TestImpersonationFilter(t *testing.T) {
 
 			delegate.ServeHTTP(w, req)
 		})
-	}(WithImpersonation(doNothingHandler, impersonateAuthorizer{}, serializer.NewCodecFactory(runtime.NewScheme())))
+	}(WithImpersonation(doNothingHandler, requestContextMapper, impersonateAuthorizer{}, serializer.NewCodecFactory(runtime.NewScheme())))
+	handler = request.WithRequestContext(handler, requestContextMapper)
 
 	server := httptest.NewServer(handler)
 	defer server.Close()
