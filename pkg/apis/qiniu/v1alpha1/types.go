@@ -48,6 +48,17 @@ type WebHook struct {
 	ClientConfig admission.WebhookClientConfig `json:"clientConfig"`
 }
 
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
+type Notification struct {
+	metav1.TypeMeta `json:",inline"`
+
+	// Request describes the attributes for the notification request.
+	Request *NotificationRequest `json:"request,omitempty"`
+	// Response describes the attributes for the notification response.
+	Response *NotificationResponse `json:"response,omitempty"`
+}
+
 // NotificationRequest describes the attributes for the notification webhook request.
 type NotificationRequest struct {
 	// UID is an identifier for the individual request/response. It allows us to distinguish instances of requests which are
