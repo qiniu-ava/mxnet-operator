@@ -1,8 +1,10 @@
 package v1alpha1
 
 import (
+	admission "k8s.io/api/admissionregistration/v1beta1"
 	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 )
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
@@ -33,6 +35,45 @@ type MXJobSpec struct {
 	//     "worker": MXReplicaSpe,
 	//   }
 	MXReplicaSpecs MXReplicaSpecs `json:"replicaSpecs"`
+
+	// StartWebhook describes a notification webhook when MXJob started.
+	StartWebhook *WebHook `json:"startWebhook,omitempty"`
+	// FinishWebhook describes a notification webhook when MXJob finished.
+	FinishWebhook *WebHook `json:"finishWebhook,omitempty"`
+}
+
+type WebHook struct {
+	// ClientConfig defines how to communicate with the hook.
+	// Use common structure in admissionregistration.
+	ClientConfig admission.WebhookClientConfig `json:"clientConfig"`
+}
+
+// NotificationRequest describes the attributes for the notification webhook request.
+type NotificationRequest struct {
+	// UID is an identifier for the individual request/response. It allows us to distinguish instances of requests which are
+	// otherwise identical (parallel requests, requests when earlier requests did not modify etc)
+	// The UID is meant to track the round trip (request/response) between the KAS and the WebHook, not the user request.
+	// It is suitable for correlating log entries between the webhook and apiserver, for either auditing or debugging.
+	UID types.UID `json:"uid"`
+	// Kind is the type of object MXJob.
+	Kind metav1.GroupVersionKind `json:"kind"`
+	// Name is the name of the object as presented in the request.
+	Name string `json:"name"`
+	// Namespace is the namespace associated with the request.
+	Namespace string `json:"namespace"`
+
+	// Status is the current MXJobStatus at the notification time.
+	Status MXJobStatus `json:"status,omitempty"`
+}
+
+// NotificationResponse describes the attributes for the notification webhook response.
+type NotificationResponse struct {
+	// UID is an identifier for the individual request/response.
+	// This should be copied over from the corresponding NotificationRequest.
+	UID types.UID `json:"uid"`
+
+	// Result contains extra details.
+	Result *metav1.Status `json:"status,omitempty"`
 }
 
 type MXReplicaSpecs struct {
