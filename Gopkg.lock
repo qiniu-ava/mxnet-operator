@@ -216,6 +216,12 @@
   revision = "cf1b5e0d50c7384003977bfb2225e8ac4ebd7746"
 
 [[projects]]
+  name = "github.com/pborman/uuid"
+  packages = ["."]
+  revision = "e790cca94e6cc75c7064b1332e63811d4aae1a53"
+  version = "v1.1"
+
+[[projects]]
   branch = "master"
   name = "github.com/petar/GoLLRB"
   packages = ["llrb"]
@@ -387,6 +393,7 @@
     "pkg/util/runtime",
     "pkg/util/sets",
     "pkg/util/strategicpatch",
+    "pkg/util/uuid",
     "pkg/util/validation",
     "pkg/util/validation/field",
     "pkg/util/wait",
@@ -402,6 +409,10 @@
 [[projects]]
   name = "k8s.io/apiserver"
   packages = [
+    "pkg/admission/plugin/webhook/config",
+    "pkg/admission/plugin/webhook/config/apis/webhookadmission",
+    "pkg/admission/plugin/webhook/config/apis/webhookadmission/v1alpha1",
+    "pkg/admission/plugin/webhook/errors",
     "pkg/authentication/authenticator",
     "pkg/authentication/serviceaccount",
     "pkg/authentication/user",
@@ -517,6 +528,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "932a148a33a8da62c8faa0f8af6bcb12225c4216a402ba9307590aae29f8ec8b"
+  inputs-digest = "0d193bbad32cd980cb6feef5ca97da2eabfb95831d93b8963540eae87af942e1"
   solver-name = "gps-cdcl"
   solver-version = 1
