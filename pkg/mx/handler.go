@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/operator-framework/operator-sdk/pkg/k8sclient"
 	"github.com/operator-framework/operator-sdk/pkg/sdk"
 	"github.com/qiniu-ava/mxnet-operator/pkg/apis/qiniu/v1alpha1"
 	scontroller "github.com/qiniu-ava/mxnet-operator/pkg/controller"
@@ -83,7 +84,7 @@ type Handler struct {
 
 // NewHandler creates a Handler.
 func NewHandler() (*Handler, error) {
-	kubeClientSet, _ := mustNewKubeClient()
+	kubeClientSet := k8sclient.GetKubeClient()
 
 	logrus.Debug("Creating event broadcaster")
 	eventBroadcaster := record.NewBroadcaster()

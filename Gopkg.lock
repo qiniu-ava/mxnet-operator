@@ -213,7 +213,7 @@
     "pkg/util/k8sutil",
     "version"
   ]
-  revision = "cf1b5e0d50c7384003977bfb2225e8ac4ebd7746"
+  revision = "a719b04752a51e5fe723467c7e66bc35830eb179"
 
 [[projects]]
   name = "github.com/pborman/uuid"
@@ -528,6 +528,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "0d193bbad32cd980cb6feef5ca97da2eabfb95831d93b8963540eae87af942e1"
+  inputs-digest = "3c7763e448f7cc9cd39a760b0b02610d033fbfc8d0b98a884e7060c616210407"
   solver-name = "gps-cdcl"
   solver-version = 1
