@@ -32,6 +32,10 @@ func main() {
 	logrus.Infof("Watching %s, %s, %s, %d", apiVersion, kind, namespace, resyncPeriod)
 	sdk.Watch(apiVersion, kind, namespace, resyncPeriod)
 
-	sdk.Handle(stub.NewHandler())
+	handler, e := stub.NewHandler()
+	if e != nil {
+		logrus.Fatalf("Failed to create handler: %v", err)
+	}
+	sdk.Handle(handler)
 	sdk.Run(context.TODO())
 }

@@ -10,10 +10,14 @@ import (
 )
 
 // NewHandler creates a sdk Handler.
-func NewHandler() sdk.Handler {
-	return &Handler{
-		mxHandler: mx.NewHandler(),
+func NewHandler() (sdk.Handler, error) {
+	h, e := mx.NewHandler()
+	if e != nil {
+		return nil, e
 	}
+	return &Handler{
+		mxHandler: h,
+	}, nil
 }
 
 // Handler is a sdk events processor.

@@ -17,7 +17,13 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/serializer"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	"k8s.io/apimachinery/pkg/util/uuid"
+	"k8s.io/apimachinery/pkg/util/wait"
+	webhook "k8s.io/apiserver/pkg/admission/plugin/webhook/config"
+	webhookerrors "k8s.io/apiserver/pkg/admission/plugin/webhook/errors"
 	"k8s.io/client-go/kubernetes/scheme"
 	typedcorev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/tools/cache"
@@ -71,10 +77,12 @@ type Handler struct {
 	expectations controller.ControllerExpectationsInterface
 
 	recorder record.EventRecorder
+
+	webhookClientManager ClientManager
 }
 
 // NewHandler creates a Handler.
-func NewHandler() *Handler {
+func NewHandler() (*Handler, error) {
 	kubeClientSet, _ := mustNewKubeClient()
 
 	logrus.Debug("Creating event broadcaster")
@@ -93,12 +101,29 @@ func NewHandler() *Handler {
 		Recorder:   eventBroadcaster.NewRecorder(scheme.Scheme, v1.EventSource{Component: controllerName}),
 	}
 
-	return &Handler{
-		podControl:     realPodControl,
-		serviceControl: realServiceControl,
-		expectations:   controller.NewControllerExpectations(),
-		recorder:       recorder,
+	cm, err := NewClientManager()
+	if err != nil {
+		return nil, err
 	}
+	authInfoResolver, err := webhook.NewDefaultAuthenticationInfoResolver("")
+	if err != nil {
+		return nil, err
+	}
+	cm.SetAuthenticationInfoResolver(authInfoResolver)
+	cm.SetServiceResolver(webhook.NewDefaultServiceResolver())
+	scheme := runtime.NewScheme()
+	v1alpha1.AddToScheme(scheme)
+	cm.SetNegotiatedSerializer(serializer.NegotiatedSerializerWrapper(runtime.SerializerInfo{
+		Serializer: serializer.NewCodecFactory(scheme).LegacyCodec(v1alpha1.SchemeGroupVersion),
+	}))
+
+	return &Handler{
+		podControl:           realPodControl,
+		serviceControl:       realServiceControl,
+		expectations:         controller.NewControllerExpectations(),
+		recorder:             recorder,
+		webhookClientManager: cm,
+	}, nil
 }
 
 // Sync synchronizes mxjobs.
@@ -186,6 +211,8 @@ func (h *Handler) reconcileMXJobs(mxjob *v1alpha1.MXJob) error {
 	if !checkCondition(mxjob.Status, v1alpha1.MXJobInitialized) {
 		msg := fmt.Sprintf("MXJob %s is initialized.", mxjob.Name)
 		h.updateMXJobConditions(mxjob, v1alpha1.MXJobInitialized, v1alpha1.MXJobReasonInitialized, msg)
+
+		h.callHookAsync(context.TODO(), mxjob, true)
 	}
 
 	// terminate job when job is finished
@@ -194,6 +221,8 @@ func (h *Handler) reconcileMXJobs(mxjob *v1alpha1.MXJob) error {
 			loggerForMXJob(mxjob).Infof("terminate mxjob error: %v", err)
 			return err
 		}
+
+		h.callHookAsync(context.TODO(), mxjob, false)
 	}
 
 	if !reflect.DeepEqual(*oldStatus, mxjob.Status) {
@@ -582,6 +611,80 @@ func (h *Handler) satisfiedExpectations(mxjob *v1alpha1.MXJob) bool {
 		satisfied = satisfied || h.expectations.SatisfiedExpectations(expectationPodsKey)
 	}
 	return satisfied
+}
+
+func (h *Handler) callHookAsync(ctx context.Context, mxjob *v1alpha1.MXJob, startOrFinish bool) {
+	job := mxjob.DeepCopy()
+	var wh *v1alpha1.Webhook
+	if startOrFinish {
+		wh = job.Spec.StartWebhook
+	} else {
+		wh = job.Spec.FinishWebhook
+	}
+
+	if wh == nil {
+		return
+	}
+
+	backoff := wait.Backoff{
+		Duration: 1 * time.Second,
+		Factor:   1.5,
+		Jitter:   0.2,
+		Steps:    5,
+	}
+
+	go func() {
+		err := wait.ExponentialBackoff(backoff, func() (bool, error) {
+			err := h.callHook(ctx, wh, job)
+			if err == nil {
+				return true, nil
+			}
+
+			if callErr, ok := err.(*webhookerrors.ErrCallingWebhook); ok {
+				loggerForMXJob(job).Warningf("failed calling webhook, failing closed %v: %v", wh.Name, callErr)
+				return false, nil // retry
+			}
+
+			loggerForMXJob(job).Warningf("failed handling by webhook %v: %v", wh.Name, err)
+			return false, err
+		})
+
+		loggerForMXJob(job).Infof("finished calling webhook %v, for mxjob start %v: %v", wh.Name, startOrFinish, err)
+	}()
+}
+
+func (h *Handler) callHook(ctx context.Context, wh *v1alpha1.Webhook, mxjob *v1alpha1.MXJob) error {
+	request := v1alpha1.Notification{
+		Request: &v1alpha1.NotificationRequest{
+			UID: uuid.NewUUID(),
+			Kind: metav1.GroupVersionKind{
+				Group:   v1alpha1.SchemeGroupVersionKind.Group,
+				Version: v1alpha1.SchemeGroupVersionKind.Version,
+				Kind:    v1alpha1.SchemeGroupVersionKind.Kind,
+			},
+			Name:      mxjob.Name,
+			Namespace: mxjob.Namespace,
+			Status:    mxjob.Status,
+		},
+	}
+	// TODO: webhookerrors contains literal "adminssion", need update
+	client, err := h.webhookClientManager.HookClient(wh)
+	if err != nil {
+		return &webhookerrors.ErrCallingWebhook{WebhookName: wh.Name, Reason: err}
+	}
+	response := &v1alpha1.Notification{}
+	if err := client.Post().Context(ctx).Body(&request).Do().Into(response); err != nil {
+		return &webhookerrors.ErrCallingWebhook{WebhookName: wh.Name, Reason: err}
+	}
+
+	if response.Response == nil {
+		return &webhookerrors.ErrCallingWebhook{WebhookName: wh.Name, Reason: fmt.Errorf("Webhook response was absent")}
+	}
+
+	if response.Response.Result.Status == metav1.StatusSuccess {
+		return nil
+	}
+	return webhookerrors.ToStatusErr(wh.Name, response.Response.Result)
 }
 
 func podList(pods v1.PodList) (ret []*v1.Pod) {

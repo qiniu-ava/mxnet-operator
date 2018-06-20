@@ -37,12 +37,18 @@ type MXJobSpec struct {
 	MXReplicaSpecs MXReplicaSpecs `json:"replicaSpecs"`
 
 	// StartWebhook describes a notification webhook when MXJob started.
-	StartWebhook *WebHook `json:"startWebhook,omitempty"`
+	StartWebhook *Webhook `json:"startWebhook,omitempty"`
 	// FinishWebhook describes a notification webhook when MXJob finished.
-	FinishWebhook *WebHook `json:"finishWebhook,omitempty"`
+	FinishWebhook *Webhook `json:"finishWebhook,omitempty"`
 }
 
-type WebHook struct {
+type Webhook struct {
+	// The name of the admission webhook.
+	// Name should be fully qualified, e.g., imagepolicy.kubernetes.io, where
+	// "imagepolicy" is the name of the webhook, and kubernetes.io is the name
+	// of the organization.
+	Name string
+
 	// ClientConfig defines how to communicate with the hook.
 	// Use common structure in admissionregistration.
 	ClientConfig admission.WebhookClientConfig `json:"clientConfig"`
