@@ -14,27 +14,26 @@
 
 package generator
 
-const boilerplateTmpl = `
+import (
+	"bytes"
+	"testing"
+)
+
+const versionExp = `package version
+
+var (
+	Version = "0.9.2+git"
+)
 `
 
-const updateGeneratedTmpl = `#!/usr/bin/env bash
-
-set -o errexit
-set -o nounset
-set -o pipefail
-
-DOCKER_REPO_ROOT="/go/src/{{.RepoPath}}"
-IMAGE=${IMAGE:-"gcr.io/coreos-k8s-scale-testing/codegen:1.9.3"}
-
-docker run --rm \
-  -v "$PWD":"$DOCKER_REPO_ROOT":Z \
-  -w "$DOCKER_REPO_ROOT" \
-  "$IMAGE" \
-  "/go/src/k8s.io/code-generator/generate-groups.sh"  \
-  "deepcopy" \
-  "{{.RepoPath}}/pkg/generated" \
-  "{{.RepoPath}}/pkg/apis" \
-  "{{.APIDirName}}:{{.Version}}" \
-  --go-header-file "./tmp/codegen/boilerplate.go.txt" \
-  $@
-`
+func TestGenVersion(t *testing.T) {
+	buf := &bytes.Buffer{}
+	if err := renderFile(buf, "version/version.go", versionTmpl, tmplData{VersionNumber: "0.9.2+git"}); err != nil {
+		t.Error(err)
+		return
+	}
+	if versionExp != buf.String() {
+		t.Errorf("Wants: %v", versionExp)
+		t.Errorf("  Got: %v", buf.String())
+	}
+}
