@@ -146,7 +146,7 @@ func (h *Handler) Sync(ctx context.Context, mxjob *v1alpha1.MXJob, deleted bool)
 	}
 
 	// if job was finished previously, we don't want to redo the termination
-	if isJobFinished(mxjob.Status) {
+	if IsJobFinished(mxjob.Status) {
 		return nil
 	}
 
@@ -217,7 +217,7 @@ func (h *Handler) reconcileMXJobs(mxjob *v1alpha1.MXJob) error {
 	}
 
 	// terminate job when job is finished
-	if isJobFinished(mxjob.Status) {
+	if IsJobFinished(mxjob.Status) {
 		if err := h.terminateMXJob(mxjob, pods); err != nil {
 			loggerForMXJob(mxjob).Infof("terminate mxjob error: %v", err)
 			return err
@@ -848,15 +848,6 @@ func filterOutCondition(conditions []v1alpha1.MXJobCondition, condType v1alpha1.
 		newConditions = append(newConditions, c)
 	}
 	return newConditions
-}
-
-func isJobFinished(status v1alpha1.MXJobStatus) bool {
-	for _, c := range status.Conditions {
-		if (c.Type == v1alpha1.MXJobSucceeded || c.Type == v1alpha1.MXJobFailed) && c.Status == v1.ConditionTrue {
-			return true
-		}
-	}
-	return false
 }
 
 func genExpectationPodsKey(mxjobKey string, replicaType v1alpha1.MXReplicaType) string {
