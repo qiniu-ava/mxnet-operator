@@ -20,7 +20,9 @@ func TestMain(m *testing.M) {
 	flag.Parse()
 
 	code := 0
-	defer os.Exit(code)
+	defer func() {
+		os.Exit(code)
+	}()
 
 	fw = framework.New(k8sclient.GetKubeClient(), *ns, *opImage)
 	err := fw.Setup()
