@@ -565,6 +565,10 @@ func (h *Handler) updateMXJobStatus(mxjob *v1alpha1.MXJob, rtype v1alpha1.MXRepl
 			now := metav1.Now()
 			mxjob.Status.CompletionTime = &now
 			h.updateMXJobConditions(mxjob, v1alpha1.MXJobSucceeded, v1alpha1.MXJobReasonSucceeded, msg)
+
+			// reset status of failed condition to false
+			msg = fmt.Sprintf("MXJob %s is not failed.", mxjob.Name)
+			h.updateMXJobFalseConditions(mxjob, v1alpha1.MXJobFailed, v1alpha1.MXJobReasonFailed, msg)
 		}
 	}
 
@@ -582,6 +586,18 @@ func (h *Handler) updateMXJobStatus(mxjob *v1alpha1.MXJob, rtype v1alpha1.MXRepl
 func (h *Handler) updateMXJobConditions(mxjob *v1alpha1.MXJob, conditionType v1alpha1.MXJobConditionType, reason v1alpha1.MXJobReason, message string) {
 	condition := newCondition(conditionType, reason, message)
 	setCondition(&mxjob.Status, condition)
+}
+
+func (h *Handler) updateMXJobFalseConditions(mxjob *v1alpha1.MXJob, conditionType v1alpha1.MXJobConditionType, reason v1alpha1.MXJobReason, message string) {
+	condition := getCondition(mxjob.Status, conditionType)
+	if condition == nil || condition.Status == v1.ConditionFalse {
+		return
+	}
+	condition.Status = v1.ConditionFalse
+	condition.LastTransitionTime = metav1.Now()
+	condition.Reason = reason
+	condition.Message = message
+	setCondition(&mxjob.Status, *condition)
 }
 
 // satisfiedExpectations returns true if the required adds/dels for the given mxjob have been observed.
@@ -834,7 +850,7 @@ func setCondition(status *v1alpha1.MXJobStatus, condition v1alpha1.MXJobConditio
 }
 
 // removeCondition removes the mxjob condition with the provided type.
-func removementCondition(status *v1alpha1.MXJobStatus, condType v1alpha1.MXJobConditionType) {
+func removeCondition(status *v1alpha1.MXJobStatus, condType v1alpha1.MXJobConditionType) {
 	status.Conditions = filterOutCondition(status.Conditions, condType)
 }
 

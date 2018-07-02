@@ -28,6 +28,7 @@ const (
 var (
 	commandNotTerminate = []string{"sleep", "1000000"}
 	commandFail         = []string{"/bin/sh", "-c", "exit 1"}
+	commandSlowFail     = []string{"/bin/sh", "-c", "sleep 5 && exit 1"}
 	commandSucceed      = []string{"/bin/sh", "-c", "exit 0"}
 	// Bash's $RANDOM generates pseudorandom int in range 0 - 32767.
 	// Dividing by 16384 gives roughly 50/50 chance of success.
@@ -111,12 +112,12 @@ func NewTestMXJob(ns, name string, behavior Behavior, servers, workers int32) *v
 		job.Spec.MXReplicaSpecs.Server.Template.Spec.Containers[0].Command = commandNotTerminate
 		job.Spec.MXReplicaSpecs.Worker.Template.Spec.Containers[0].Command = commandNotTerminate
 	case BehaviorSchedulerFail:
-		job.Spec.MXReplicaSpecs.Scheduler.Template.Spec.Containers[0].Command = commandFail
+		job.Spec.MXReplicaSpecs.Scheduler.Template.Spec.Containers[0].Command = commandSlowFail
 		job.Spec.MXReplicaSpecs.Server.Template.Spec.Containers[0].Command = commandSucceed
 		job.Spec.MXReplicaSpecs.Worker.Template.Spec.Containers[0].Command = commandSucceed
 	case BehaviorServerFail:
 		job.Spec.MXReplicaSpecs.Scheduler.Template.Spec.Containers[0].Command = commandSucceed
-		job.Spec.MXReplicaSpecs.Server.Template.Spec.Containers[0].Command = commandFail
+		job.Spec.MXReplicaSpecs.Server.Template.Spec.Containers[0].Command = commandSlowFail
 		job.Spec.MXReplicaSpecs.Worker.Template.Spec.Containers[0].Command = commandSucceed
 	case BehaviorWorkerFail:
 		job.Spec.MXReplicaSpecs.Scheduler.Template.Spec.Containers[0].Command = commandSucceed
