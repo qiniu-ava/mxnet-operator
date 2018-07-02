@@ -10,7 +10,7 @@ import (
 
 const (
 	version   = "v1alpha1"
-	groupName = "qiniu.com"
+	groupName = "ava.qiniu.com"
 	kind      = "MXJob"
 )
 

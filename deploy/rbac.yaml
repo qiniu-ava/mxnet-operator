@@ -4,7 +4,7 @@ metadata:
   name: mxnet-operator
 rules:
 - apiGroups:
-  - qiniu.com
+  - ava.qiniu.com
   resources:
   - "*"
   verbs:

@@ -1,7 +1,7 @@
 package mx
 
 import (
-	"github.com/qiniu-ava/mxnet-operator/pkg/apis/qiniu/v1alpha1"
+	"github.com/qiniu-ava/mxnet-operator/pkg/apis/ava/v1alpha1"
 	"k8s.io/api/core/v1"
 )
 

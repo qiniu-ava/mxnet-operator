@@ -28,7 +28,7 @@ import (
 
 func GetOpenAPIDefinitions(ref common.ReferenceCallback) map[string]common.OpenAPIDefinition {
 	return map[string]common.OpenAPIDefinition{
-		"github.com/qiniu-ava/mxnet-operator/pkg/apis/qiniu/v1alpha1.MXJob": {
+		"github.com/qiniu-ava/mxnet-operator/pkg/apis/ava/v1alpha1.MXJob": {
 			Schema: spec.Schema{
 				SchemaProps: spec.SchemaProps{
 					Properties: map[string]spec.Schema{
@@ -53,12 +53,12 @@ func GetOpenAPIDefinitions(ref common.ReferenceCallback) map[string]common.OpenA
 						},
 						"spec": {
 							SchemaProps: spec.SchemaProps{
-								Ref: ref("github.com/qiniu-ava/mxnet-operator/pkg/apis/qiniu/v1alpha1.MXJobSpec"),
+								Ref: ref("github.com/qiniu-ava/mxnet-operator/pkg/apis/ava/v1alpha1.MXJobSpec"),
 							},
 						},
 						"status": {
 							SchemaProps: spec.SchemaProps{
-								Ref: ref("github.com/qiniu-ava/mxnet-operator/pkg/apis/qiniu/v1alpha1.MXJobStatus"),
+								Ref: ref("github.com/qiniu-ava/mxnet-operator/pkg/apis/ava/v1alpha1.MXJobStatus"),
 							},
 						},
 					},
@@ -66,9 +66,9 @@ func GetOpenAPIDefinitions(ref common.ReferenceCallback) map[string]common.OpenA
 				},
 			},
 			Dependencies: []string{
-				"github.com/qiniu-ava/mxnet-operator/pkg/apis/qiniu/v1alpha1.MXJobSpec", "github.com/qiniu-ava/mxnet-operator/pkg/apis/qiniu/v1alpha1.MXJobStatus", "k8s.io/apimachinery/pkg/apis/meta/v1.ObjectMeta"},
+				"github.com/qiniu-ava/mxnet-operator/pkg/apis/ava/v1alpha1.MXJobSpec", "github.com/qiniu-ava/mxnet-operator/pkg/apis/ava/v1alpha1.MXJobStatus", "k8s.io/apimachinery/pkg/apis/meta/v1.ObjectMeta"},
 		},
-		"github.com/qiniu-ava/mxnet-operator/pkg/apis/qiniu/v1alpha1.MXJobCondition": {
+		"github.com/qiniu-ava/mxnet-operator/pkg/apis/ava/v1alpha1.MXJobCondition": {
 			Schema: spec.Schema{
 				SchemaProps: spec.SchemaProps{
 					Description: "MXJobCondition describes the state of the MXJob at a certain point.",
@@ -120,7 +120,7 @@ func GetOpenAPIDefinitions(ref common.ReferenceCallback) map[string]common.OpenA
 			Dependencies: []string{
 				"k8s.io/apimachinery/pkg/apis/meta/v1.Time"},
 		},
-		"github.com/qiniu-ava/mxnet-operator/pkg/apis/qiniu/v1alpha1.MXJobList": {
+		"github.com/qiniu-ava/mxnet-operator/pkg/apis/ava/v1alpha1.MXJobList": {
 			Schema: spec.Schema{
 				SchemaProps: spec.SchemaProps{
 					Properties: map[string]spec.Schema{
@@ -149,7 +149,7 @@ func GetOpenAPIDefinitions(ref common.ReferenceCallback) map[string]common.OpenA
 								Items: &spec.SchemaOrArray{
 									Schema: &spec.Schema{
 										SchemaProps: spec.SchemaProps{
-											Ref: ref("github.com/qiniu-ava/mxnet-operator/pkg/apis/qiniu/v1alpha1.MXJob"),
+											Ref: ref("github.com/qiniu-ava/mxnet-operator/pkg/apis/ava/v1alpha1.MXJob"),
 										},
 									},
 								},
@@ -160,9 +160,9 @@ func GetOpenAPIDefinitions(ref common.ReferenceCallback) map[string]common.OpenA
 				},
 			},
 			Dependencies: []string{
-				"github.com/qiniu-ava/mxnet-operator/pkg/apis/qiniu/v1alpha1.MXJob", "k8s.io/apimachinery/pkg/apis/meta/v1.ListMeta"},
+				"github.com/qiniu-ava/mxnet-operator/pkg/apis/ava/v1alpha1.MXJob", "k8s.io/apimachinery/pkg/apis/meta/v1.ListMeta"},
 		},
-		"github.com/qiniu-ava/mxnet-operator/pkg/apis/qiniu/v1alpha1.MXJobSpec": {
+		"github.com/qiniu-ava/mxnet-operator/pkg/apis/ava/v1alpha1.MXJobSpec": {
 			Schema: spec.Schema{
 				SchemaProps: spec.SchemaProps{
 					Description: "MXJobSpec is a desired state description of the MXJob.",
@@ -170,7 +170,7 @@ func GetOpenAPIDefinitions(ref common.ReferenceCallback) map[string]common.OpenA
 						"replicaSpecs": {
 							SchemaProps: spec.SchemaProps{
 								Description: "MXReplicaSpecs is map of MXReplicaType and MXReplicaSpec specifies the MX replicas to run. For example,\n  {\n    \"scheduler\": MXReplicaSpec,\n    \"server\": MXReplicaSpec,\n    \"worker\": MXReplicaSpe,\n  }",
-								Ref:         ref("github.com/qiniu-ava/mxnet-operator/pkg/apis/qiniu/v1alpha1.MXReplicaSpecs"),
+								Ref:         ref("github.com/qiniu-ava/mxnet-operator/pkg/apis/ava/v1alpha1.MXReplicaSpecs"),
 							},
 						},
 					},
@@ -178,16 +178,16 @@ func GetOpenAPIDefinitions(ref common.ReferenceCallback) map[string]common.OpenA
 				},
 			},
 			Dependencies: []string{
-				"github.com/qiniu-ava/mxnet-operator/pkg/apis/qiniu/v1alpha1.MXReplicaSpecs"},
+				"github.com/qiniu-ava/mxnet-operator/pkg/apis/ava/v1alpha1.MXReplicaSpecs"},
 		},
-		"github.com/qiniu-ava/mxnet-operator/pkg/apis/qiniu/v1alpha1.MXJobStatus": {
+		"github.com/qiniu-ava/mxnet-operator/pkg/apis/ava/v1alpha1.MXJobStatus": {
 			Schema: spec.Schema{
 				SchemaProps: spec.SchemaProps{
 					Properties: map[string]spec.Schema{
 						"replicaStatuses": {
 							SchemaProps: spec.SchemaProps{
 								Description: "ReplicaStatuses specifies the status of each MX replica.",
-								Ref:         ref("github.com/qiniu-ava/mxnet-operator/pkg/apis/qiniu/v1alpha1.MXReplicaStatuses"),
+								Ref:         ref("github.com/qiniu-ava/mxnet-operator/pkg/apis/ava/v1alpha1.MXReplicaStatuses"),
 							},
 						},
 						"startTime": {
@@ -209,7 +209,7 @@ func GetOpenAPIDefinitions(ref common.ReferenceCallback) map[string]common.OpenA
 								Items: &spec.SchemaOrArray{
 									Schema: &spec.Schema{
 										SchemaProps: spec.SchemaProps{
-											Ref: ref("github.com/qiniu-ava/mxnet-operator/pkg/apis/qiniu/v1alpha1.MXJobCondition"),
+											Ref: ref("github.com/qiniu-ava/mxnet-operator/pkg/apis/ava/v1alpha1.MXJobCondition"),
 										},
 									},
 								},
@@ -220,9 +220,9 @@ func GetOpenAPIDefinitions(ref common.ReferenceCallback) map[string]common.OpenA
 				},
 			},
 			Dependencies: []string{
-				"github.com/qiniu-ava/mxnet-operator/pkg/apis/qiniu/v1alpha1.MXJobCondition", "github.com/qiniu-ava/mxnet-operator/pkg/apis/qiniu/v1alpha1.MXReplicaStatuses", "k8s.io/apimachinery/pkg/apis/meta/v1.Time"},
+				"github.com/qiniu-ava/mxnet-operator/pkg/apis/ava/v1alpha1.MXJobCondition", "github.com/qiniu-ava/mxnet-operator/pkg/apis/ava/v1alpha1.MXReplicaStatuses", "k8s.io/apimachinery/pkg/apis/meta/v1.Time"},
 		},
-		"github.com/qiniu-ava/mxnet-operator/pkg/apis/qiniu/v1alpha1.MXReplicaSpec": {
+		"github.com/qiniu-ava/mxnet-operator/pkg/apis/ava/v1alpha1.MXReplicaSpec": {
 			Schema: spec.Schema{
 				SchemaProps: spec.SchemaProps{
 					Properties: map[string]spec.Schema{
@@ -258,35 +258,35 @@ func GetOpenAPIDefinitions(ref common.ReferenceCallback) map[string]common.OpenA
 			Dependencies: []string{
 				"k8s.io/api/core/v1.PodTemplateSpec"},
 		},
-		"github.com/qiniu-ava/mxnet-operator/pkg/apis/qiniu/v1alpha1.MXReplicaSpecs": {
+		"github.com/qiniu-ava/mxnet-operator/pkg/apis/ava/v1alpha1.MXReplicaSpecs": {
 			Schema: spec.Schema{
 				SchemaProps: spec.SchemaProps{
 					Properties: map[string]spec.Schema{
 						"scheduler": {
 							SchemaProps: spec.SchemaProps{
 								Description: "ReplicaSpecs specifies the MX scheduler replicas to run.",
-								Ref:         ref("github.com/qiniu-ava/mxnet-operator/pkg/apis/qiniu/v1alpha1.MXReplicaSpec"),
+								Ref:         ref("github.com/qiniu-ava/mxnet-operator/pkg/apis/ava/v1alpha1.MXReplicaSpec"),
 							},
 						},
 						"server": {
 							SchemaProps: spec.SchemaProps{
 								Description: "ReplicaSpecs specifies the MX server replicas to run.",
-								Ref:         ref("github.com/qiniu-ava/mxnet-operator/pkg/apis/qiniu/v1alpha1.MXReplicaSpec"),
+								Ref:         ref("github.com/qiniu-ava/mxnet-operator/pkg/apis/ava/v1alpha1.MXReplicaSpec"),
 							},
 						},
 						"worker": {
 							SchemaProps: spec.SchemaProps{
 								Description: "ReplicaSpecs specifies the MX worker replicas to run.",
-								Ref:         ref("github.com/qiniu-ava/mxnet-operator/pkg/apis/qiniu/v1alpha1.MXReplicaSpec"),
+								Ref:         ref("github.com/qiniu-ava/mxnet-operator/pkg/apis/ava/v1alpha1.MXReplicaSpec"),
 							},
 						},
 					},
 				},
 			},
 			Dependencies: []string{
-				"github.com/qiniu-ava/mxnet-operator/pkg/apis/qiniu/v1alpha1.MXReplicaSpec"},
+				"github.com/qiniu-ava/mxnet-operator/pkg/apis/ava/v1alpha1.MXReplicaSpec"},
 		},
-		"github.com/qiniu-ava/mxnet-operator/pkg/apis/qiniu/v1alpha1.MXReplicaStatus": {
+		"github.com/qiniu-ava/mxnet-operator/pkg/apis/ava/v1alpha1.MXReplicaStatus": {
 			Schema: spec.Schema{
 				SchemaProps: spec.SchemaProps{
 					Description: "MXReplicaStatus mxnet replica status",
@@ -324,31 +324,31 @@ func GetOpenAPIDefinitions(ref common.ReferenceCallback) map[string]common.OpenA
 			},
 			Dependencies: []string{},
 		},
-		"github.com/qiniu-ava/mxnet-operator/pkg/apis/qiniu/v1alpha1.MXReplicaStatuses": {
+		"github.com/qiniu-ava/mxnet-operator/pkg/apis/ava/v1alpha1.MXReplicaStatuses": {
 			Schema: spec.Schema{
 				SchemaProps: spec.SchemaProps{
 					Description: "MXReplicaStatuses is the status collection of mxnet replica.",
 					Properties: map[string]spec.Schema{
 						"scheduler": {
 							SchemaProps: spec.SchemaProps{
-								Ref: ref("github.com/qiniu-ava/mxnet-operator/pkg/apis/qiniu/v1alpha1.MXReplicaStatus"),
+								Ref: ref("github.com/qiniu-ava/mxnet-operator/pkg/apis/ava/v1alpha1.MXReplicaStatus"),
 							},
 						},
 						"server": {
 							SchemaProps: spec.SchemaProps{
-								Ref: ref("github.com/qiniu-ava/mxnet-operator/pkg/apis/qiniu/v1alpha1.MXReplicaStatus"),
+								Ref: ref("github.com/qiniu-ava/mxnet-operator/pkg/apis/ava/v1alpha1.MXReplicaStatus"),
 							},
 						},
 						"worker": {
 							SchemaProps: spec.SchemaProps{
-								Ref: ref("github.com/qiniu-ava/mxnet-operator/pkg/apis/qiniu/v1alpha1.MXReplicaStatus"),
+								Ref: ref("github.com/qiniu-ava/mxnet-operator/pkg/apis/ava/v1alpha1.MXReplicaStatus"),
 							},
 						},
 					},
 				},
 			},
 			Dependencies: []string{
-				"github.com/qiniu-ava/mxnet-operator/pkg/apis/qiniu/v1alpha1.MXReplicaStatus"},
+				"github.com/qiniu-ava/mxnet-operator/pkg/apis/ava/v1alpha1.MXReplicaStatus"},
 		},
 		"k8s.io/api/core/v1.AWSElasticBlockStoreVolumeSource": {
 			Schema: spec.Schema{

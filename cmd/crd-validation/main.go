@@ -9,12 +9,12 @@ import (
 
 	crdvalidation "github.com/ant31/crd-validation/pkg"
 	"github.com/ghodss/yaml"
-	"github.com/qiniu-ava/mxnet-operator/pkg/apis/qiniu/v1alpha1"
+	"github.com/qiniu-ava/mxnet-operator/pkg/apis/ava/v1alpha1"
 	apiext "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1"
 )
 
 const (
-	crdName = "github.com/qiniu-ava/mxnet-operator/pkg/apis/qiniu/v1alpha1.MXJob"
+	crdName = "github.com/qiniu-ava/mxnet-operator/pkg/apis/ava/v1alpha1.MXJob"
 )
 
 func main() {

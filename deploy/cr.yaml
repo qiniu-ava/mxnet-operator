@@ -1,4 +1,4 @@
-apiVersion: "qiniu.com/v1alpha1"
+apiVersion: "ava.qiniu.com/v1alpha1"
 kind: "MXJob"
 metadata:
   name: "mxjob-example"

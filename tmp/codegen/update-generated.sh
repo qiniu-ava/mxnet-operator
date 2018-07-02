@@ -15,6 +15,6 @@ docker run --rm \
   "deepcopy" \
   "github.com/qiniu-ava/mxnet-operator/pkg/generated" \
   "github.com/qiniu-ava/mxnet-operator/pkg/apis" \
-  "qiniu:v1alpha1" \
+  "ava:v1alpha1" \
   --go-header-file "./tmp/codegen/boilerplate.go.txt" \
   $@
