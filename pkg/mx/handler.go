@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/golang/groupcache/singleflight"
 	"github.com/operator-framework/operator-sdk/pkg/k8sclient"
 	"github.com/operator-framework/operator-sdk/pkg/sdk"
 	"github.com/qiniu-ava/mxnet-operator/pkg/apis/qiniu/v1alpha1"
@@ -80,6 +81,8 @@ type Handler struct {
 	recorder record.EventRecorder
 
 	webhookClientManager ClientManager
+
+	finalizerGroup singleflight.Group
 }
 
 // NewHandler creates a Handler.
@@ -136,6 +139,13 @@ func (h *Handler) Sync(ctx context.Context, mxjob *v1alpha1.MXJob, deleted bool)
 
 	if deleted {
 		loggerForMXJob(mxjob).Infof("mxjob has been deleted")
+		return nil
+	}
+
+	// mxjob is pending deletion
+	if mxjob.DeletionTimestamp != nil {
+		loggerForMXJob(mxjob).Infof("mxjob is pending deletion")
+		h.handleMXJobFinalizers(mxjob)
 		return nil
 	}
 
@@ -630,7 +640,7 @@ func (h *Handler) satisfiedExpectations(mxjob *v1alpha1.MXJob) bool {
 	return satisfied
 }
 
-func (h *Handler) callHookAsync(ctx context.Context, mxjob *v1alpha1.MXJob, startOrFinish bool) {
+func (h *Handler) callHookAsync(ctx context.Context, mxjob *v1alpha1.MXJob, startOrFinish bool) <-chan error {
 	job := mxjob.DeepCopy()
 	var wh *v1alpha1.Webhook
 	if startOrFinish {
@@ -639,8 +649,10 @@ func (h *Handler) callHookAsync(ctx context.Context, mxjob *v1alpha1.MXJob, star
 		wh = job.Spec.FinishWebhook
 	}
 
+	errCh := make(chan error, 1)
 	if wh == nil {
-		return
+		errCh <- nil
+		return errCh
 	}
 
 	backoff := wait.Backoff{
@@ -666,8 +678,10 @@ func (h *Handler) callHookAsync(ctx context.Context, mxjob *v1alpha1.MXJob, star
 			return false, err
 		})
 
-		loggerForMXJob(job).Infof("finished calling webhook %v, for mxjob start %v: %v", wh.Name, startOrFinish, err)
+		loggerForMXJob(job).Infof("finished calling webhook %v, for mxjob start (%v): %v", wh.Name, startOrFinish, err)
+		errCh <- err
 	}()
+	return errCh
 }
 
 func (h *Handler) callHook(ctx context.Context, wh *v1alpha1.Webhook, mxjob *v1alpha1.MXJob) error {
@@ -679,9 +693,10 @@ func (h *Handler) callHook(ctx context.Context, wh *v1alpha1.Webhook, mxjob *v1a
 				Version: v1alpha1.SchemeGroupVersionKind.Version,
 				Kind:    v1alpha1.SchemeGroupVersionKind.Kind,
 			},
-			Name:      mxjob.Name,
-			Namespace: mxjob.Namespace,
-			Status:    mxjob.Status,
+			Name:              mxjob.Name,
+			Namespace:         mxjob.Namespace,
+			Status:            mxjob.Status,
+			DeletionTimestamp: mxjob.DeletionTimestamp,
 		},
 	}
 	// TODO: webhookerrors contains literal "adminssion", need update
@@ -702,6 +717,37 @@ func (h *Handler) callHook(ctx context.Context, wh *v1alpha1.Webhook, mxjob *v1a
 		return nil
 	}
 	return webhookerrors.ToStatusErr(wh.Name, response.Response.Result)
+}
+
+func (h *Handler) handleMXJobFinalizers(mxjob *v1alpha1.MXJob) {
+	var callFinishWH bool
+	var indexFound int
+	for i, f := range mxjob.Finalizers {
+		if f == v1alpha1.FinalizerFinishWebhook {
+			callFinishWH = true
+			indexFound = i
+		}
+	}
+
+	// call the finish webhook in another goroutine, clear the finalizer after it is done.
+	if callFinishWH {
+		go func() {
+			loggerForMXJob(mxjob).Infof("the finalizer %s of mxjob is executing", v1alpha1.FinalizerFinishWebhook)
+			h.finalizerGroup.Do(mxjob.Namespace+"/"+mxjob.Name, func() (interface{}, error) {
+				if !IsJobFinished(mxjob.Status) { // if job is already finished, don't call the finish webhook again.
+					<-h.callHookAsync(context.TODO(), mxjob, false)
+				}
+
+				// remove the finalizer after have called the finish webhook
+				mxjob.Finalizers = append(mxjob.Finalizers[:indexFound], mxjob.Finalizers[indexFound+1:]...)
+				var err error
+				if err = sdk.Update(mxjob); err != nil {
+					loggerForMXJob(mxjob).Infof("clear finalizers error: %v", err)
+				}
+				return nil, err
+			})
+		}()
+	}
 }
 
 func podList(pods v1.PodList) (ret []*v1.Pod) {

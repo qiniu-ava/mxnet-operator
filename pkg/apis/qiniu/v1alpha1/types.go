@@ -7,6 +7,11 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 )
 
+const (
+	// FinalizerFinishWebhook is a finalizer for calling finish webhook.
+	FinalizerFinishWebhook = "finishWebhook"
+)
+
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
 type MXJobList struct {
@@ -81,6 +86,9 @@ type NotificationRequest struct {
 
 	// Status is the current MXJobStatus at the notification time.
 	Status MXJobStatus `json:"status,omitempty"`
+
+	// DeletionTimestamp is RFC 3339 date and time at which this resource will be deleted.
+	DeletionTimestamp *metav1.Time `json:"deletionTimestamp,omitempty"`
 }
 
 // NotificationResponse describes the attributes for the notification webhook response.
