@@ -693,9 +693,10 @@ func (h *Handler) callHook(ctx context.Context, wh *v1alpha1.Webhook, mxjob *v1a
 				Version: v1alpha1.SchemeGroupVersionKind.Version,
 				Kind:    v1alpha1.SchemeGroupVersionKind.Kind,
 			},
-			Name:      mxjob.Name,
-			Namespace: mxjob.Namespace,
-			Status:    mxjob.Status,
+			Name:              mxjob.Name,
+			Namespace:         mxjob.Namespace,
+			Status:            mxjob.Status,
+			DeletionTimestamp: mxjob.DeletionTimestamp,
 		},
 	}
 	// TODO: webhookerrors contains literal "adminssion", need update
@@ -734,10 +735,7 @@ func (h *Handler) handleMXJobFinalizers(mxjob *v1alpha1.MXJob) {
 			loggerForMXJob(mxjob).Infof("the finalizer %s of mxjob is executing", v1alpha1.FinalizerFinishWebhook)
 			h.finalizerGroup.Do(mxjob.Namespace+"/"+mxjob.Name, func() (interface{}, error) {
 				if !IsJobFinished(mxjob.Status) { // if job is already finished, don't call the finish webhook again.
-					e := <-h.callHookAsync(context.TODO(), mxjob, false)
-					if e != nil { // even call failed, job still need to be deleted
-						loggerForMXJob(mxjob).Errorf("failed to call finish webhook in finalizer")
-					}
+					<-h.callHookAsync(context.TODO(), mxjob, false)
 				}
 
 				// remove the finalizer after have called the finish webhook

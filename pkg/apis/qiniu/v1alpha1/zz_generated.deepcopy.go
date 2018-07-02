@@ -371,6 +371,15 @@ func (in *NotificationRequest) DeepCopyInto(out *NotificationRequest) {
 	*out = *in
 	out.Kind = in.Kind
 	in.Status.DeepCopyInto(&out.Status)
+	if in.DeletionTimestamp != nil {
+		in, out := &in.DeletionTimestamp, &out.DeletionTimestamp
+		if *in == nil {
+			*out = nil
+		} else {
+			*out = new(v1.Time)
+			(*in).DeepCopyInto(*out)
+		}
+	}
 	return
 }
 
