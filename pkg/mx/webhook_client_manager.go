@@ -8,7 +8,7 @@ import (
 	"net/url"
 
 	lru "github.com/hashicorp/golang-lru"
-	"github.com/qiniu-ava/mxnet-operator/pkg/apis/qiniu/v1alpha1"
+	"github.com/qiniu-ava/mxnet-operator/pkg/apis/ava/v1alpha1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	webhook "k8s.io/apiserver/pkg/admission/plugin/webhook/config"

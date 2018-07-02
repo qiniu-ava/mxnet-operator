@@ -4,7 +4,7 @@ import (
 	"context"
 
 	"github.com/operator-framework/operator-sdk/pkg/sdk"
-	"github.com/qiniu-ava/mxnet-operator/pkg/apis/qiniu/v1alpha1"
+	"github.com/qiniu-ava/mxnet-operator/pkg/apis/ava/v1alpha1"
 	"github.com/qiniu-ava/mxnet-operator/pkg/mx"
 	"github.com/sirupsen/logrus"
 )

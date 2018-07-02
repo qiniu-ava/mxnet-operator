@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/operator-framework/operator-sdk/pkg/sdk"
-	"github.com/qiniu-ava/mxnet-operator/pkg/apis/qiniu/v1alpha1"
+	"github.com/qiniu-ava/mxnet-operator/pkg/apis/ava/v1alpha1"
 	"github.com/qiniu-ava/mxnet-operator/pkg/mx"
 	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
