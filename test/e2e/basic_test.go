@@ -45,7 +45,7 @@ func TestMXJobBehavior(t *testing.T) {
 
 	name = "server-failed"
 	t.Run(name, func(t *testing.T) {
-		job := framework.NewTestMXJob(fw.Namespace(), name, framework.BehaviorServerFail, 3, 3)
+		job := framework.NewTestMXJob(fw.Namespace(), name, framework.BehaviorServerFail, 1, 1)
 		if e := framework.CreateMXJob(job); e != nil {
 			t.Fatal("failed to create mxjob: ", e)
 		}
@@ -57,7 +57,7 @@ func TestMXJobBehavior(t *testing.T) {
 
 	name = "scheduler-failed"
 	t.Run(name, func(t *testing.T) {
-		job := framework.NewTestMXJob(fw.Namespace(), name, framework.BehaviorSchedulerFail, 3, 3)
+		job := framework.NewTestMXJob(fw.Namespace(), name, framework.BehaviorSchedulerFail, 1, 1)
 		if e := framework.CreateMXJob(job); e != nil {
 			t.Fatal("failed to create mxjob: ", e)
 		}
