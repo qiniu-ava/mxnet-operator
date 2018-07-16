@@ -97,7 +97,10 @@
 [[projects]]
   branch = "master"
   name = "github.com/golang/groupcache"
-  packages = ["lru"]
+  packages = [
+    "lru",
+    "singleflight"
+  ]
   revision = "24b0969c4cb722950103eed87108c8d291a8df00"
 
 [[projects]]
@@ -175,6 +178,12 @@
   packages = ["."]
   revision = "59fac5042749a5afb9af70e813da1dd5474f0167"
   version = "1.0.1"
+
+[[projects]]
+  branch = "master"
+  name = "github.com/kubernetes-incubator/kube-arbitrator"
+  packages = ["pkg/apis/v1alpha1"]
+  revision = "be967d49d3f2066e875d52d454b10f4a880ae402"
 
 [[projects]]
   branch = "master"
@@ -528,6 +537,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "3c7763e448f7cc9cd39a760b0b02610d033fbfc8d0b98a884e7060c616210407"
+  inputs-digest = "8f0ad0e745cf9ff110936a521ab05fe563e360e5e4f05229df30429f244d232c"
   solver-name = "gps-cdcl"
   solver-version = 1
