@@ -619,7 +619,7 @@ func (h *Handler) updateMXJobStatus(mxjob *v1alpha1.MXJob, rtype v1alpha1.MXRepl
 
 	if rtype == v1alpha1.MXReplicaTypeWorker {
 		// All workers are running, set StartTime.
-		if running == replicas {
+		if running == replicas && mxjob.Status.StartTime == nil {
 			now := metav1.Now()
 			mxjob.Status.StartTime = &now
 		}
@@ -633,8 +633,11 @@ func (h *Handler) updateMXJobStatus(mxjob *v1alpha1.MXJob, rtype v1alpha1.MXRepl
 		// All workers are succeeded, leave a succeeded condition.
 		if expected == 0 {
 			msg := fmt.Sprintf("MXJob %s is successfully completed.", mxjob.Name)
-			now := metav1.Now()
-			mxjob.Status.CompletionTime = &now
+
+			if mxjob.Status.CompletionTime == nil {
+				now := metav1.Now()
+				mxjob.Status.CompletionTime = &now
+			}
 			h.updateMXJobConditions(mxjob, v1alpha1.MXJobSucceeded, v1alpha1.MXJobReasonSucceeded, msg)
 
 			// reset status of failed condition to false
