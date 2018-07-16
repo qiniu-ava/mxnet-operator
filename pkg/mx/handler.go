@@ -777,6 +777,13 @@ func (h *Handler) callHook(ctx context.Context, wh *v1alpha1.Webhook, mxjob *v1a
 		return &webhookerrors.ErrCallingWebhook{WebhookName: wh.Name, Reason: fmt.Errorf("Webhook response was absent")}
 	}
 
+	if response.Response.Result.Code >= 500 {
+		return &webhookerrors.ErrCallingWebhook{
+			WebhookName: wh.Name,
+			Reason:      fmt.Errorf("Webhook server error %s (%d)", response.Response.Result.Message, response.Response.Result.Code),
+		}
+	}
+
 	if response.Response.Result.Status == metav1.StatusSuccess {
 		return nil
 	}
