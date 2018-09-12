@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/golang/groupcache/singleflight"
-	arbv1 "github.com/kubernetes-incubator/kube-arbitrator/pkg/apis/v1alpha1"
 	"github.com/operator-framework/operator-sdk/pkg/k8sclient"
 	"github.com/operator-framework/operator-sdk/pkg/sdk"
 	"github.com/qiniu-ava/mxnet-operator/pkg/apis/ava/v1alpha1"
@@ -177,14 +176,6 @@ func (h *Handler) Sync(ctx context.Context, mxjob *v1alpha1.MXJob, deleted bool)
 
 func (h *Handler) reconcileMXJobs(mxjob *v1alpha1.MXJob) error {
 	loggerForMXJob(mxjob).Infof("Reconcile MXJobs %s", mxjob.Name)
-
-	// reconcile SchedulingSpec first
-	if mxjob.Spec.SchedSpec != nil {
-		if err := h.reconcileSchedulingSpecs(mxjob); err != nil {
-			loggerForMXJob(mxjob).Infof("reconcileSchedulingSpecs error %v", err)
-			return err
-		}
-	}
 
 	pods, err := h.getPodsForMXJob(mxjob)
 	if err != nil {
@@ -467,56 +458,6 @@ func (h *Handler) reconcileServices(mxjob *v1alpha1.MXJob, services []*v1.Servic
 	} else if num > 1 {
 		loggerForReplica(mxjob, rtype).Infof("need to delete number of service: %d", num-1)
 		// TODO:
-	}
-	return nil
-}
-
-func (h *Handler) reconcileSchedulingSpecs(mxjob *v1alpha1.MXJob) error {
-	ss := arbv1.SchedulingSpecList{TypeMeta: metav1.TypeMeta{
-		Kind:       schedulingSpecKind,
-		APIVersion: arbv1.SchemeGroupVersion.String(),
-	}}
-	err := sdk.List(mxjob.Namespace, &ss,
-		sdk.WithListOptions(&metav1.ListOptions{FieldSelector: fmt.Sprintf("metadata.name=%s", mxjob.Name)}))
-	if err != nil {
-		loggerForMXJob(mxjob).Infof("failed to list SchedulingSpec: %v", err)
-		return err
-	}
-
-	// filter owner by mxjob
-	var numSS int
-	for _, s := range ss.Items {
-		controllerRef := metav1.GetControllerOf(&s)
-		if controllerRef != nil {
-			if controllerRef.UID == mxjob.GetUID() {
-				numSS++
-			}
-		}
-	}
-
-	if numSS == 0 {
-		// create SchedulingSpec for mxjob
-		newss := &arbv1.SchedulingSpec{
-			TypeMeta: metav1.TypeMeta{
-				Kind:       schedulingSpecKind,
-				APIVersion: arbv1.SchemeGroupVersion.String(),
-			},
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      mxjob.Name,
-				Namespace: mxjob.Namespace,
-				OwnerReferences: []metav1.OwnerReference{
-					*metav1.NewControllerRef(mxjob, v1alpha1.SchemeGroupVersionKind),
-				},
-			},
-			Spec: *mxjob.Spec.SchedSpec,
-		}
-
-		if err := sdk.Create(newss); err != nil {
-			loggerForMXJob(mxjob).Infof("failed to create SchedulingSpec: %v", err)
-			return nil
-		}
-	} else {
-		loggerForMXJob(mxjob).Infof("there's %d SchedulingSpecs for mxjob", numSS)
 	}
 	return nil
 }
