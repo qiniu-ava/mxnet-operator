@@ -5,7 +5,6 @@
 package v1alpha1
 
 import (
-	apis_v1alpha1 "github.com/kubernetes-incubator/kube-arbitrator/pkg/apis/v1alpha1"
 	core_v1 "k8s.io/api/core/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
@@ -111,15 +110,6 @@ func (in *MXJobSpec) DeepCopyInto(out *MXJobSpec) {
 			*out = nil
 		} else {
 			*out = new(Webhook)
-			(*in).DeepCopyInto(*out)
-		}
-	}
-	if in.SchedSpec != nil {
-		in, out := &in.SchedSpec, &out.SchedSpec
-		if *in == nil {
-			*out = nil
-		} else {
-			*out = new(apis_v1alpha1.SchedulingSpecTemplate)
 			(*in).DeepCopyInto(*out)
 		}
 	}

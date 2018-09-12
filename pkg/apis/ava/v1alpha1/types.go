@@ -1,7 +1,6 @@
 package v1alpha1
 
 import (
-	arbv1 "github.com/kubernetes-incubator/kube-arbitrator/pkg/apis/v1alpha1"
 	admission "k8s.io/api/admissionregistration/v1beta1"
 	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -46,9 +45,6 @@ type MXJobSpec struct {
 	StartWebhook *Webhook `json:"startWebhook,omitempty"`
 	// FinishWebhook describes a notification webhook when MXJob finished.
 	FinishWebhook *Webhook `json:"finishWebhook,omitempty"`
-
-	// SchedSpec specifies the parameters for scheduling.
-	SchedSpec *arbv1.SchedulingSpecTemplate `json:"schedulingSpec,omitempty"`
 }
 
 type Webhook struct {
